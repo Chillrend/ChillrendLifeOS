@@ -25,15 +25,28 @@ const rest = new REST().setToken(process.env.DISCORD_TOKEN);
 
 (async () => {
     try {
-        console.log(`Started refreshing ${commands.length} application (/) commands.`);
+        const isGuild = process.argv.includes('--guild');
+        const isClear = process.argv.includes('--clear');
 
-        // The put method is used to fully refresh all commands in the guild with the current set
-        const data = await rest.put(
-            Routes.applicationCommands(process.env.DISCORD_CLIENT_ID),
-            { body: commands },
-        );
+        let route;
+        if (isGuild) {
+            route = Routes.applicationGuildCommands(process.env.DISCORD_CLIENT_ID, process.env.DISCORD_GUILD_ID);
+        } else {
+            route = Routes.applicationCommands(process.env.DISCORD_CLIENT_ID);
+        }
 
-        console.log(`Successfully reloaded ${data.length} application (/) commands.`);
+        if (isClear) {
+            console.log('Clearing all application (/) commands.');
+            await rest.put(route, { body: [] });
+            console.log('Successfully cleared all application (/) commands.');
+        } else {
+            console.log(`Started refreshing ${commands.length} application (/) commands.`);
+            const data = await rest.put(
+                route,
+                { body: commands },
+            );
+            console.log(`Successfully reloaded ${data.length} application (/) commands.`);
+        }
     } catch (error) {
         console.error(error);
     }

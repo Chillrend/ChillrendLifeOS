@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "deploy": "node src/deploy-commands.js"
+    "deploy": "node src/deploy-commands.js",
+    "deploy-guilds": "node src/deploy-commands.js --guild"
   },
   "keywords": [],
   "author": "Antigravity",
