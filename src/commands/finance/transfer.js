@@ -1,55 +1,70 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-// We reuse addTransaction, but transfer usually implies two transactions (out and in).
-// However, Actual Budget 'transfers' are often just one transaction with a transfer 'payee' (the other account).
-// api.importTransactions handles checking for transfer payees usually.
-// Let's rely on basic logic: "Transfer $100 to Savings" -> AI detects Payee="Savings" -> Actual detects Payee is Account -> creates transfer.
-const { parseTransaction } = require('../../services/geminiService');
-const { addTransaction } = require('../../services/actualService');
+const { processTransfer } = require('../../services/geminiService');
+const actualService = require('../../services/actualService');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('transfer')
-        .setDescription('Log a transfer between accounts')
+        .setDescription('Log a transfer between accounts using AI parsing.')
         .addStringOption(option =>
             option.setName('details')
-                .setDescription('Transfer details e.g., "$500 to Savings"')
-                .setRequired(true))
-        .addStringOption(option =>
-            option.setName('from')
-                .setDescription('Account to transfer FROM')
-                .setRequired(false)),
+                .setDescription('Transfer details e.g., "pindahin 500rb dari bca ke gopay"')
+                .setRequired(true)),
     async execute(interaction) {
         await interaction.deferReply();
 
         try {
+            await actualService.init();
+
             const rawInput = interaction.options.getString('details');
-            const accountOverride = interaction.options.getString('from');
 
-            // 1. AI Parse (Treat as expense from source)
-            const details = await parseTransaction(rawInput, 'expense');
-            if (!details) throw new Error("Failed to parse transfer details.");
+            const accounts = await actualService.getAccounts();
+            const accountNames = accounts.map(acc => acc.name);
 
-            if (accountOverride) details.account = accountOverride;
+            const parsedDetails = await processTransfer(rawInput, accountNames);
 
-            // Amount is negative for the sender
-            details.amount = -Math.abs(details.amount);
+            if (!parsedDetails) {
+                return interaction.editReply({ content: '❌ I could not understand the transfer details. Please try rephrasing.' });
+            }
 
-            // Note: Actual API requires the payee_name to EXACTLY match an account name for it to be a transfer.
-            // AI might give "Savings", if your account is "Savings Account", it might break.
-            // We'll rely on user or AI getting it close enough, or Actual creating a new payee.
-            // A more robust solution would verify account names.
+            const sourceAccount = accounts.find(acc => acc.name === parsedDetails.source_account_name);
+            const destinationAccount = accounts.find(acc => acc.name === parsedDetails.destination_account_name);
 
-            // 2. Submit to Actual
-            await addTransaction(details);
+            if (!sourceAccount) {
+                return interaction.editReply({ content: `❌ Source account "${parsedDetails.source_account_name}" not found.` });
+            }
+            if (!destinationAccount) {
+                return interaction.editReply({ content: `❌ Destination account "${parsedDetails.destination_account_name}" not found.` });
+            }
+
+            // In Actual, a transfer is a single transaction where the payee is the other account.
+            const payees = await actualService.getPayees();
+            const transferPayee = payees.find(p => p.transfer_acct === destinationAccount.id);
+
+            if (!transferPayee) {
+                return interaction.editReply({ content: `❌ Could not find the internal transfer payee for account "${destinationAccount.name}". Please ensure it's set up in Actual.` });
+            }
+
+            const amountMilliunits = actualService.utils.amountToMilliunits(-Math.abs(parsedDetails.amount));
+
+            const transaction = {
+                date: parsedDetails.transaction_date,
+                amount: amountMilliunits,
+                payee: transferPayee.id,
+                notes: parsedDetails.description,
+                cleared: false,
+            };
+
+            await actualService.addTransactions(sourceAccount.id, [transaction]);
 
             const embed = new EmbedBuilder()
                 .setTitle('↔️ Transfer Logged')
-                .setDescription('Note: Verify in Actual that this linked correctly.')
+                .setDescription(parsedDetails.description)
                 .addFields(
-                    { name: 'Amount', value: `$${Math.abs(details.amount)}`, inline: true },
-                    { name: 'To (Payee)', value: details.payee || 'Unknown', inline: true },
-                    { name: 'From (Account)', value: details.account || 'Default', inline: true },
-                    { name: 'Date', value: details.date, inline: true }
+                    { name: 'Amount', value: `$${Math.abs(parsedDetails.amount).toFixed(2)}`, inline: true },
+                    { name: 'From', value: parsedDetails.source_account_name, inline: true },
+                    { name: 'To', value: parsedDetails.destination_account_name, inline: true },
+                    { name: 'Date', value: parsedDetails.transaction_date, inline: true }
                 )
                 .setColor(0x0000FF);
 
@@ -57,7 +72,7 @@ module.exports = {
 
         } catch (error) {
             console.error('Transfer Command Error:', error);
-            await interaction.editReply({ content: `❌ Error: ${error.message}` });
+            await interaction.editReply({ content: `❌ An error occurred while logging your transfer: ${error.message}` });
         }
     },
 };

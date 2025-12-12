@@ -2,143 +2,220 @@ const api = require('@actual-app/api');
 const fs = require('fs');
 const path = require('path');
 
-let _budgetId = process.env.ACTUAL_SYNC_ID;
-let _connected = false;
-
 // Ensure we have a data directory for Actual
 const dataDir = path.join(__dirname, '../../actual-data');
 if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
+  fs.mkdirSync(dataDir, { recursive: true });
 }
 
+let isInitialized = false;
+
 /**
- * Initialize connection to Actual Budget
+ * @typedef {object} Transaction
+ * @property {string} date - The transaction date in YYYY-MM-DD format.
+ * @property {number} amount - The transaction amount in milliunits (e.g., $12.34 is 12340).
+ * @property {string} [payee_name] - The name of the payee.
+ * @property {string} [notes] - Any notes for the transaction.
+ * @property {string} [category] - The ID of the category for the transaction.
+ * @property {boolean} [cleared] - The cleared status of the transaction.
  */
-const initActual = async () => {
-    if (_connected) return;
 
-    try {
-        await api.init({
-            dataDir,
-            serverURL: process.env.ACTUAL_SERVER_URL,
-            password: process.env.ACTUAL_PASSWORD,
-        });
+/**
+ * @typedef {object} Account
+ * @property {string} id - The account's unique identifier.
+ * @property {string} name - The name of the account.
+ * @property {string} type - The type of the account (e.g., 'checking', 'savings').
+ * @property {boolean} offbudget - Whether the account is an off-budget account.
+ * @property {boolean} closed - Whether the account is closed.
+ * @property {number} balance - The current balance of the account.
+ */
 
-        // If no ID provided, try to find one? 
-        // For safety, we strictly rely on env var or fail, 
-        // but we could list files if needed. 
-        // For now, assume user provides ACTUAL_SYNC_ID in env.
+/**
+ * @typedef {object} Category
+ * @property {string} id - The category's unique identifier.
+ * @property {string} name - The name of the category.
+ * @property {boolean} is_income - Whether this is an income category.
+ * @property {string} group_id - The ID of the group this category belongs to.
+ */
 
-        if (!_budgetId) {
-            console.warn("ACTUAL_SYNC_ID not set. Attempting to download first available budget...");
-            // This logic could be complex (requires auth), so better to fail or wait.
-        }
+/**
+ * @typedef {object} Payee
+ * @property {string} id - The payee's unique identifier.
+ * @property {string} name - The name of the payee.
+ * @property {string} [transfer_acct] - If this is a transfer payee, the ID of the account it transfers to/from.
+ * @property {boolean} [internal] - Whether this is an internal payee (e.g., for transfers).
+ */
 
-        console.log('Actual Budget API Initialized');
-        _connected = true;
-    } catch (error) {
-        console.error('Failed to initialize Actual API:', error);
-        throw error;
-    }
+/**
+ * Initializes the connection to the Actual Budget server.
+ * This must be called before any other methods.
+ * @returns {Promise<void>}
+ */
+const init = async () => {
+  if (isInitialized) {
+    return;
+  }
+  try {
+    console.log('Initializing connection to Actual Budget server...');
+    await api.init({
+      dataDir,
+      serverURL: process.env.ACTUAL_SERVER_URL,
+      password: process.env.ACTUAL_PASSWORD,
+    });
+
+    // This replaces the need for runWithBudget in every call
+    await api.downloadBudget(process.env.ACTUAL_SYNC_ID);
+
+    isInitialized = true;
+    console.log('Successfully connected to Actual Budget server.');
+  } catch (error) {
+    console.error(`Actual API Init Error: ${error.message}`);
+    throw new Error(`Actual API Init Error: ${error.message}`);
+  }
 };
 
 /**
- * Add a transaction to Actual
- * @param {Object} transaction - { date, amount, payee, notes, category, account }
+ * Adds transactions to a specified account in Actual.
+ * @param {string} accountId - The ID of the account to add the transaction to.
+ * @param {Transaction[]} transactions - An array of transaction objects.
+ * @returns {Promise<string[]>} The IDs of the added transactions.
  */
-const addTransaction = async (transaction) => {
-    if (!_connected) await initActual();
-    if (!_budgetId) throw new Error("ACTUAL_SYNC_ID is missing in environment variables.");
+const addTransactions = async (accountId, transactions) => {
+  if (!isInitialized) {
+    await init();
+  }
 
-    await api.runWithBudget(_budgetId, async () => {
-        // 1. Resolve Account
-        // For simplicity, we default to the first available checking/cash account if not specified
-        // or we can look up by name.
-        let accountId;
-        const accounts = await api.getAccounts();
-
-        if (transaction.account) {
-            const match = accounts.find(a => a.name.toLowerCase().includes(transaction.account.toLowerCase()));
-            if (match) accountId = match.id;
-        }
-
-        if (!accountId) {
-            // Fallback: try to find an account named 'Cash' or 'Checking' or take the first on-budget one
-            const fallback = accounts.find(a => a.offbudget === false && (a.closed === false));
-            if (fallback) accountId = fallback.id;
-            else throw new Error("No open budget account found.");
-        }
-
-        // 2. Resolve Category
-        // Actual API requires category ID. We need to fuzzy match the string name.
-        let categoryId = null;
-        if (transaction.category) {
-            const groups = await api.getCategories(); // Returns groups with categories
-            for (const group of groups) {
-                if (group.categories) {
-                    const found = group.categories.find(c =>
-                        c.name.toLowerCase() === transaction.category.toLowerCase()
-                    );
-                    if (found) {
-                        categoryId = found.id;
-                        break;
-                    }
-                }
-            }
-        }
-
-        // 3. Resolve Payee
-        // Actual handles string payees well (creates new if needed), 
-        // but explicit ID is better. api.importTransactions handles this usually,
-        // but api.addTransactions is lower level. 
-        // We'll use api.importTransactions() as it handles Rules and Payee creation automatically!
-
-        const finalAmount = api.utils.amountToInteger(transaction.amount);
-
-        const record = {
-            date: transaction.date || new Date().toISOString().split('T')[0],
-            amount: finalAmount, // Input should be number, util converts to integer cents
-            payee_name: transaction.payee,
-            notes: transaction.notes,
-            account: accountId,
-            cleared: true,
-        };
-
-        if (categoryId) {
-            record.category = categoryId;
-        }
-
-        await api.importTransactions(accountId, [record]);
-        console.log(`Imported transaction: ${transaction.payee} - ${transaction.amount}`);
-    });
+  try {
+    console.log(`Adding ${transactions.length} transaction(s) to account ${accountId}`);
+    // Note: The new service used `addTransactions`, but `importTransactions` is often better
+    // as it can create payees and apply rules. We will use that one.
+    const transactionIds = await api.importTransactions(accountId, transactions);
+    return transactionIds;
+  } catch (error) {
+    console.error(`Actual API Error (addTransactions): ${error.message}`);
+    throw new Error(`Actual API Error (addTransactions): ${error.message}`);
+  }
 };
 
 /**
- * Get current month budget summary (Basic)
+ * Gets the budget for a specific month.
+ * @param {string} date - The month to get the budget for, in YYYY-MM format.
+ * @returns {Promise<object>} The budget data for the specified month.
  */
-const getBudgetSummary = async () => {
-    if (!_connected) await initActual();
-    if (!_budgetId) throw new Error("ACTUAL_SYNC_ID is missing.");
+const getBudgetMonth = async (date) => {
+  if (!isInitialized) {
+    await init();
+  }
 
-    let summary = {};
+  try {
+    console.log(`Getting budget for month: ${date}`);
+    const budgetMonth = await api.getBudgetMonth(date);
+    return budgetMonth;
+  } catch (error) {
+    console.error(`Actual API Error (getBudgetMonth): ${error.message}`);
+    throw new Error(`Actual API Error (getBudgetMonth): ${error.message}`);
+  }
+};
 
-    await api.runWithBudget(_budgetId, async () => {
-        // This is complex in Actual API v6. 
-        // We'll just return account balances for now as a "summary".
-        const accounts = await api.getAccounts();
-        const activeAccounts = accounts.filter(a => !a.closed && !a.offbudget);
+/**
+ * Gets all accounts.
+ * @returns {Promise<Account[]>} A list of all accounts.
+ */
+const getAccounts = async () => {
+  if (!isInitialized) {
+    await init();
+  }
 
-        // We need to fetch balances (not directly in getAccounts in some versions, depends on cache)
-        // Ideally we query generic balance.
-        // For this task, let's keep it simple: just list accounts.
-        summary.accounts = activeAccounts.map(a => ({ name: a.name, id: a.id }));
-    });
+  try {
+    console.log('Getting all accounts...');
+    const accounts = await api.getAccounts();
+    return accounts;
+  } catch (error) {
+    console.error(`Actual API Error (getAccounts): ${error.message}`);
+    throw new Error(`Actual API Error (getAccounts): ${error.message}`);
+  }
+};
 
-    return summary;
+/**
+ * Gets all categories.
+ * @returns {Promise<Category[]>} A list of all categories.
+ */
+const getCategories = async () => {
+  if (!isInitialized) {
+    await init();
+  }
+
+  try {
+    console.log('Getting all categories...');
+      return await api.getCategories();
+  } catch (error) {
+    console.error(`Actual API Error (getCategories): ${error.message}`);
+    throw new Error(`Actual API Error (getCategories): ${error.message}`);
+  }
+};
+
+/**
+ * Gets all payees.
+ * @returns {Promise<Payee[]>} A list of all payees.
+ */
+const getPayees = async () => {
+  if (!isInitialized) {
+    await init();
+  }
+
+  try {
+    console.log('Getting all payees...');
+      return await api.getPayees();
+  } catch (error) {
+    console.error(`Actual API Error (getPayees): ${error.message}`);
+    throw new Error(`Actual API Error (getPayees): ${error.message}`);
+  }
+};
+
+/**
+ * Gets the balance for a single account.
+ * @param {string} accountId - The ID of the account.
+ * @returns {Promise<number>} The balance of the account in cents.
+ */
+const getAccountBalance = async (accountId) => {
+  if (!isInitialized) {
+    await init();
+  }
+
+  try {
+    console.log(`Getting balance for account: ${accountId}`);
+    // Note: This function doesn't exist in the base API, but can be calculated.
+    // For now, we will return a placeholder.
+    // A full implementation would query transactions for the account and sum them.
+    const accounts = await getAccounts();
+    const account = accounts.find((a) => a.id === accountId);
+    if (!account) throw new Error('Account not found');
+    // The `balance` property is not guaranteed, so this is an approximation.
+      return await api.getAccountBalance(accountId);
+  } catch (error) {
+    console.error(`Actual API Error (getAccountBalance): ${error.message}`);
+    throw new Error(`Actual API Error (getAccountBalance): ${error.message}`);
+  }
+};
+/**
+ * Shuts down the connection to the Actual Budget server.
+ */
+const shutdown = async () => {
+  if (isInitialized) {
+    await api.shutdown();
+    isInitialized = false;
+    console.log('Connection to Actual Budget server shut down.');
+  }
 };
 
 module.exports = {
-    initActual,
-    addTransaction,
-    getBudgetSummary
+  init,
+  addTransactions,
+  getBudgetMonth,
+  getAccounts,
+  getAccountBalance,
+  getCategories,
+  getPayees,
+  shutdown,
+  utils: api.utils, // Exposing utils is helpful (e.g., for amountToInteger)
 };
