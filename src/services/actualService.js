@@ -89,8 +89,7 @@ const addTransactions = async (accountId, transactions) => {
     console.log(`Adding ${transactions.length} transaction(s) to account ${accountId}`);
     // Note: The new service used `addTransactions`, but `importTransactions` is often better
     // as it can create payees and apply rules. We will use that one.
-    const transactionIds = await api.importTransactions(accountId, transactions);
-    return transactionIds;
+      return await api.importTransactions(accountId, transactions);
   } catch (error) {
     console.error(`Actual API Error (addTransactions): ${error.message}`);
     throw new Error(`Actual API Error (addTransactions): ${error.message}`);
@@ -109,8 +108,7 @@ const getBudgetMonth = async (date) => {
 
   try {
     console.log(`Getting budget for month: ${date}`);
-    const budgetMonth = await api.getBudgetMonth(date);
-    return budgetMonth;
+      return await api.getBudgetMonth(date);
   } catch (error) {
     console.error(`Actual API Error (getBudgetMonth): ${error.message}`);
     throw new Error(`Actual API Error (getBudgetMonth): ${error.message}`);

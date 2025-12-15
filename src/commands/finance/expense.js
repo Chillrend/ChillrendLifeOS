@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { processTransaction } = require('../../services/geminiService');
-const actualService = require('../../services/actualService'); // Import the entire service
+const actualService = require('../../services/actualService');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -14,25 +14,21 @@ module.exports = {
         await interaction.deferReply();
 
         try {
-            await actualService.init(); // Ensure Actual service is initialized
+            await actualService.init();
 
             const rawInput = interaction.options.getString('details');
 
-            // Fetch accounts and categories for Gemini to use
             const accounts = await actualService.getAccounts();
             const categories = await actualService.getCategories();
-
             const accountNames = accounts.map(acc => acc.name);
             const categoryNames = categories.map(cat => cat.name);
 
-            // 1. AI Parse
             const parsedDetails = await processTransaction(rawInput, 'expense', accountNames, categoryNames);
 
             if (!parsedDetails) {
                 return interaction.editReply({ content: '❌ I could not understand the expense details. Please try rephrasing.' });
             }
 
-            // Find the actual account and category objects by name
             const targetAccount = accounts.find(acc => acc.name === parsedDetails.account_name);
             const targetCategory = categories.find(cat => cat.name === parsedDetails.category_name);
 
@@ -43,20 +39,17 @@ module.exports = {
                 return interaction.editReply({ content: `❌ Category "${parsedDetails.category_name}" not found in Actual Budget.` });
             }
 
-            // Ensure amount is negative for expense and convert to milliunits
             const amountMilliunits = actualService.utils.amountToMilliunits(-Math.abs(parsedDetails.amount));
 
-            // 2. Prepare transaction for Actual Budget
             const transaction = {
                 date: parsedDetails.transaction_date,
                 amount: amountMilliunits,
                 payee_name: parsedDetails.payee_name || 'Unknown',
                 notes: parsedDetails.description,
                 category: targetCategory.id,
-                cleared: false, // Default to uncleared
+                cleared: false,
             };
 
-            // 3. Submit to Actual
             await actualService.addTransactions(targetAccount.id, [transaction]);
 
             const embed = new EmbedBuilder()
@@ -75,7 +68,12 @@ module.exports = {
 
         } catch (error) {
             console.error('Expense Command Error:', error);
-            await interaction.editReply({ content: `❌ An error occurred while logging your expense: ${error.message}` });
+            // Check if the reply has already been sent before trying to edit it
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.editReply({ content: `❌ An error occurred while logging your expense: ${error.message}` });
+            }
+        } finally {
+            await actualService.shutdown();
         }
     },
 };

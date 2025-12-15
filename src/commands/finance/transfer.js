@@ -37,7 +37,6 @@ module.exports = {
                 return interaction.editReply({ content: `❌ Destination account "${parsedDetails.destination_account_name}" not found.` });
             }
 
-            // In Actual, a transfer is a single transaction where the payee is the other account.
             const payees = await actualService.getPayees();
             const transferPayee = payees.find(p => p.transfer_acct === destinationAccount.id);
 
@@ -72,7 +71,11 @@ module.exports = {
 
         } catch (error) {
             console.error('Transfer Command Error:', error);
-            await interaction.editReply({ content: `❌ An error occurred while logging your transfer: ${error.message}` });
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.editReply({ content: `❌ An error occurred while logging your transfer: ${error.message}` });
+            }
+        } finally {
+            await actualService.shutdown();
         }
     },
 };

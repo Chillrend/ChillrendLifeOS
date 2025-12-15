@@ -36,7 +36,6 @@ module.exports = {
                     return interaction.editReply({ content: `❌ Account "${parsedQuery.name}" not found.` });
                 }
 
-                // The balance from getAccounts is often sufficient and faster
                 const balance = targetAccount.balance / 100; // Assuming balance is in cents
                 embed.addFields(
                     { name: 'Account', value: targetAccount.name },
@@ -51,7 +50,6 @@ module.exports = {
                      }
                  }
             } else {
-                // Placeholder for category/budget queries which are more complex
                 return interaction.editReply({ content: 'Sorry, querying category spending is not fully implemented yet.' });
             }
 
@@ -59,7 +57,11 @@ module.exports = {
 
         } catch (error) {
             console.error('Balance Command Error:', error);
-            await interaction.editReply({ content: `❌ An error occurred: ${error.message}` });
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.editReply({ content: `❌ An error occurred: ${error.message}` });
+            }
+        } finally {
+            await actualService.shutdown();
         }
     },
 };

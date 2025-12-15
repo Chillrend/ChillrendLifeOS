@@ -20,9 +20,7 @@ module.exports = {
 
             const accounts = await actualService.getAccounts();
             const categories = await actualService.getCategories();
-
             const accountNames = accounts.map(acc => acc.name);
-            // Filter for income categories
             const incomeCategoryNames = categories.filter(cat => cat.is_income).map(cat => cat.name);
 
             const parsedDetails = await processTransaction(rawInput, 'income', accountNames, incomeCategoryNames);
@@ -70,7 +68,11 @@ module.exports = {
 
         } catch (error) {
             console.error('Income Command Error:', error);
-            await interaction.editReply({ content: `❌ An error occurred while logging your income: ${error.message}` });
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.editReply({ content: `❌ An error occurred while logging your income: ${error.message}` });
+            }
+        } finally {
+            await actualService.shutdown();
         }
     },
 };

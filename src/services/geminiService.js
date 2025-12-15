@@ -19,7 +19,7 @@ const generateAndValidateJson = async (prompt, jsonSchema, zodSchema, functionNa
       model: 'gemini-2.5-flash', // Updated model
       generationConfig: {
         responseMimeType: 'application/json',
-        responseSchema: jsonSchema,
+        responseJsonSchema: jsonSchema,
       },
     });
 
