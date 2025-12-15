@@ -171,7 +171,7 @@ const getPayees = async () => {
 };
 
 /**
- * Gets the balance for a single account.
+ * Gets the balance for a single account by summing its transactions.
  * @param {string} accountId - The ID of the account.
  * @returns {Promise<number>} The balance of the account in cents.
  */
@@ -182,14 +182,11 @@ const getAccountBalance = async (accountId) => {
 
   try {
     console.log(`Getting balance for account: ${accountId}`);
-    // Note: This function doesn't exist in the base API, but can be calculated.
-    // For now, we will return a placeholder.
-    // A full implementation would query transactions for the account and sum them.
-    const accounts = await getAccounts();
-    const account = accounts.find((a) => a.id === accountId);
-    if (!account) throw new Error('Account not found');
-    // The `balance` property is not guaranteed, so this is an approximation.
-      return await api.getAccountBalance(accountId);
+    // The `balance` property on an account is not always up-to-date.
+    // A reliable way to get the balance is to sum all of its transactions.
+    const transactions = await api.getTransactions(accountId);
+    const balance = transactions.reduce((total, transaction) => total + transaction.amount, 0);
+    return balance;
   } catch (error) {
     console.error(`Actual API Error (getAccountBalance): ${error.message}`);
     throw new Error(`Actual API Error (getAccountBalance): ${error.message}`);

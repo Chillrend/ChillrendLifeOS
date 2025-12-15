@@ -2,6 +2,16 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { processBalanceQuery } = require('../../services/geminiService');
 const actualService = require('../../services/actualService');
 
+// Helper to format numbers as Indonesian Rupiah
+const formatToIDR = (amount) => {
+    return new Intl.NumberFormat('id-ID', {
+        style: 'currency',
+        currency: 'IDR',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }).format(amount);
+};
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('balance')
@@ -36,17 +46,19 @@ module.exports = {
                     return interaction.editReply({ content: `❌ Account "${parsedQuery.name}" not found.` });
                 }
 
-                const balance = targetAccount.balance / 100; // Assuming balance is in cents
+                const balanceInCents = await actualService.getAccountBalance(targetAccount.id);
+                const balance = balanceInCents / 100;
                 embed.addFields(
                     { name: 'Account', value: targetAccount.name },
-                    { name: 'Balance', value: `$${balance.toFixed(2)}` }
+                    { name: 'Balance', value: formatToIDR(balance) }
                 );
-            } else if (parsedQuery.query_type === 'summary' && parsedQuery.name === 'all') {
+            } else if (parsedQuery.query_type === 'summary') {
                  embed.setTitle('All Account Balances');
                  for (const account of accounts) {
                      if (!account.closed) {
-                        const balance = account.balance / 100;
-                        embed.addFields({ name: account.name, value: `$${balance.toFixed(2)}`, inline: true });
+                        const balanceInCents = await actualService.getAccountBalance(account.id);
+                        const balance = balanceInCents / 100;
+                        embed.addFields({ name: account.name, value: formatToIDR(balance), inline: true });
                      }
                  }
             } else {

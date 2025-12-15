@@ -24,26 +24,27 @@ module.exports = {
             const categoryNames = categories.map(cat => cat.name);
 
             const parsedDetails = await processTransaction(rawInput, 'expense', accountNames, categoryNames);
-
+            console.log(parsedDetails);
             if (!parsedDetails) {
                 return interaction.editReply({ content: '❌ I could not understand the expense details. Please try rephrasing.' });
             }
 
-            const targetAccount = accounts.find(acc => acc.name === parsedDetails.account_name);
-            const targetCategory = categories.find(cat => cat.name === parsedDetails.category_name);
-
+            const targetAccount = accounts.find(acc => acc.name === parsedDetails.account);
+            const targetCategory = categories.find(cat => cat.name === parsedDetails.category);
+            console.log('parsed: ', parsedDetails,' acc: ', targetAccount, ' cat:' ,targetCategory)
             if (!targetAccount) {
-                return interaction.editReply({ content: `❌ Account "${parsedDetails.account_name}" not found in Actual Budget.` });
+                return interaction.editReply({ content: `❌ Account "${parsedDetails.account}" not found in Actual Budget.` });
             }
             if (!targetCategory) {
-                return interaction.editReply({ content: `❌ Category "${parsedDetails.category_name}" not found in Actual Budget.` });
+                return interaction.editReply({ content: `❌ Category "${parsedDetails.category}" not found in Actual Budget.` });
             }
 
-            const amountMilliunits = actualService.utils.amountToMilliunits(-Math.abs(parsedDetails.amount));
+            // Convert amount to a negative integer in cents for an expense.
+            const amountInCents = actualService.utils.amountToInteger(-Math.abs(parsedDetails.amount));
 
             const transaction = {
-                date: parsedDetails.transaction_date,
-                amount: amountMilliunits,
+                date: parsedDetails.date,
+                amount: amountInCents,
                 payee_name: parsedDetails.payee_name || 'Unknown',
                 notes: parsedDetails.description,
                 category: targetCategory.id,
@@ -56,11 +57,11 @@ module.exports = {
                 .setTitle('💸 Expense Logged')
                 .setDescription(parsedDetails.description)
                 .addFields(
-                    { name: 'Amount', value: `$${Math.abs(parsedDetails.amount).toFixed(2)}`, inline: true },
-                    { name: 'Account', value: parsedDetails.account_name, inline: true },
-                    { name: 'Category', value: parsedDetails.category_name, inline: true },
+                    { name: 'Amount', value: `Rp ${Math.abs(parsedDetails.amount).toFixed(2)}`, inline: true },
+                    { name: 'Account', value: parsedDetails.account, inline: true },
+                    { name: 'Category', value: parsedDetails.category, inline: true },
                     { name: 'Payee', value: parsedDetails.payee_name || 'N/A', inline: true },
-                    { name: 'Date', value: parsedDetails.transaction_date, inline: true }
+                    { name: 'Date', value: parsedDetails.date, inline: true }
                 )
                 .setColor(0xFF0000);
 
