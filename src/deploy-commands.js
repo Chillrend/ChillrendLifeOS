@@ -7,6 +7,8 @@ const commands = [];
 const foldersPath = path.join(__dirname, 'commands');
 const commandFolders = fs.readdirSync(foldersPath);
 
+const isDev = process.env.NODE_ENV === 'development';
+
 for (const folder of commandFolders) {
     const commandsPath = path.join(foldersPath, folder);
     const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
@@ -14,7 +16,12 @@ for (const folder of commandFolders) {
         const filePath = path.join(commandsPath, file);
         const command = require(filePath);
         if ('data' in command && 'execute' in command) {
-            commands.push(command.data.toJSON());
+            const commandData = command.data.toJSON();
+            // Add 'dev-' prefix if in development and deploying to a guild
+            if (isDev && process.argv.includes('--guild')) {
+                commandData.name = `dev-${commandData.name}`;
+            }
+            commands.push(commandData);
         } else {
             console.log(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
         }
@@ -36,9 +43,9 @@ const rest = new REST().setToken(process.env.DISCORD_TOKEN);
         }
 
         if (isClear) {
-            console.log('Clearing all application (/) commands.');
+            console.log('Clearing application (/) commands.');
             await rest.put(route, { body: [] });
-            console.log('Successfully cleared all application (/) commands.');
+            console.log('Successfully cleared application (/) commands.');
         } else {
             console.log(`Started refreshing ${commands.length} application (/) commands.`);
             const data = await rest.put(
