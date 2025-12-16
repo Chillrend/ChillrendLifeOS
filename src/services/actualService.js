@@ -194,6 +194,75 @@ const getAccountBalance = async (accountId) => {
 };
 
 /**
+ * Calculates the total spending for a specific category in the current month.
+ * @param {string} categoryId - The ID of the category to query.
+ * @returns {Promise<number>} The total spending in the category in cents.
+ */
+const getCategorySpending = async (categoryId) => {
+    if (!isInitialized) {
+        await init();
+    }
+
+    try {
+        console.log(`Calculating spending for category: ${categoryId}`);
+        const today = new Date();
+        const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+        const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+
+        // Format date to YYYY-MM-DD string right here, as requested.
+        const startDate = firstDayOfMonth.toISOString().split('T')[0];
+        const endDate = lastDayOfMonth.toISOString().split('T')[0];
+
+        const transactions = await api.getTransactions(null, startDate, endDate);
+        
+        const categorySpending = transactions.reduce((total, t) => {
+            // Only sum negative amounts for the specified category (expenses)
+            if (t.category === categoryId && t.amount < 0) {
+                return total + t.amount;
+            }
+            return total;
+        }, 0);
+
+        // Return the absolute value since spending is a positive concept
+        return Math.abs(categorySpending);
+    } catch (error) {
+        console.error(`Actual API Error (getCategorySpending): ${error.message}`);
+        throw new Error(`Actual API Error (getCategorySpending): ${error.message}`);
+    }
+};
+
+/**
+ * Gets the budgeted amount for a specific category in the current month.
+ * @param {string} categoryId - The ID of the category to query.
+ * @returns {Promise<number>} The budgeted amount in cents.
+ */
+const getCategoryBudget = async (categoryId) => {
+    if (!isInitialized) {
+        await init();
+    }
+
+    try {
+        console.log(`Getting budget for category: ${categoryId}`);
+        const today = new Date();
+        const month = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+
+        const budgetData = await api.getBudgetMonth(month);
+        
+        for (const group of budgetData.categoryGroups) {
+            const category = group.categories.find(c => c.id === categoryId);
+            if (category) {
+                return category.budgeted || 0; // Return budgeted amount or 0 if not set
+            }
+        }
+        
+        return 0; // Return 0 if category not found in budget
+    } catch (error) {
+        console.error(`Actual API Error (getCategoryBudget): ${error.message}`);
+        throw new Error(`Actual API Error (getCategoryBudget): ${error.message}`);
+    }
+};
+
+/**
  * Formats a numeric amount into Indonesian Rupiah (IDR) currency string.
  * @param {number} amount - The amount to format.
  * @returns {string} The formatted currency string (e.g., "Rp 10.000,00").
@@ -225,6 +294,8 @@ module.exports = {
   getAccounts,
   getAccountBalance,
   getCategories,
+  getCategorySpending,
+  getCategoryBudget,
   getPayees,
   shutdown,
   utils: api.utils, // Exposing utils is helpful (e.g., for amountToInteger)
