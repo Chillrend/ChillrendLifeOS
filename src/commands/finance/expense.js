@@ -57,7 +57,7 @@ module.exports = {
                 .setTitle('💸 Expense Logged')
                 .setDescription(parsedDetails.description)
                 .addFields(
-                    { name: 'Amount', value: `Rp ${Math.abs(parsedDetails.amount).toFixed(2)}`, inline: true },
+                    { name: 'Amount', value: actualService.formatToIDR(Math.abs(parsedDetails.amount)), inline: true },
                     { name: 'Account', value: parsedDetails.account, inline: true },
                     { name: 'Category', value: parsedDetails.category, inline: true },
                     { name: 'Payee', value: parsedDetails.payee_name || 'N/A', inline: true },

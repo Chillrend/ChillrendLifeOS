@@ -29,21 +29,21 @@ module.exports = {
                 return interaction.editReply({ content: '❌ I could not understand the income details. Please try rephrasing.' });
             }
 
-            const targetAccount = accounts.find(acc => acc.name === parsedDetails.account_name);
-            const targetCategory = categories.find(cat => cat.name === parsedDetails.category_name);
+            const targetAccount = accounts.find(acc => acc.name === parsedDetails.account);
+            const targetCategory = categories.find(cat => cat.name === parsedDetails.category);
 
             if (!targetAccount) {
-                return interaction.editReply({ content: `❌ Account "${parsedDetails.account_name}" not found in Actual Budget.` });
+                return interaction.editReply({ content: `❌ Account "${parsedDetails.account}" not found in Actual Budget.` });
             }
             if (!targetCategory) {
-                return interaction.editReply({ content: `❌ Category "${parsedDetails.category_name}" not found in Actual Budget.` });
+                return interaction.editReply({ content: `❌ Category "${parsedDetails.category}" not found in Actual Budget.` });
             }
 
-            const amountMilliunits = actualService.utils.amountToMilliunits(Math.abs(parsedDetails.amount));
+            const amountInCents = actualService.utils.amountToInteger(Math.abs(parsedDetails.amount));
 
             const transaction = {
-                date: parsedDetails.transaction_date,
-                amount: amountMilliunits,
+                date: parsedDetails.date,
+                amount: amountInCents,
                 payee_name: parsedDetails.payee_name || 'Unknown',
                 notes: parsedDetails.description,
                 category: targetCategory.id,
@@ -56,11 +56,11 @@ module.exports = {
                 .setTitle('💰 Income Logged')
                 .setDescription(parsedDetails.description)
                 .addFields(
-                    { name: 'Amount', value: `$${Math.abs(parsedDetails.amount).toFixed(2)}`, inline: true },
-                    { name: 'Account', value: parsedDetails.account_name, inline: true },
-                    { name: 'Category', value: parsedDetails.category_name, inline: true },
+                    { name: 'Amount', value: actualService.formatToIDR(Math.abs(parsedDetails.amount)), inline: true },
+                    { name: 'Account', value: parsedDetails.account, inline: true },
+                    { name: 'Category', value: parsedDetails.category, inline: true },
                     { name: 'Source', value: parsedDetails.payee_name || 'N/A', inline: true },
-                    { name: 'Date', value: parsedDetails.transaction_date, inline: true }
+                    { name: 'Date', value: parsedDetails.date, inline: true }
                 )
                 .setColor(0x00FF00);
 

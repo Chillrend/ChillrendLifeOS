@@ -27,14 +27,17 @@ module.exports = {
                 return interaction.editReply({ content: '❌ I could not understand the transfer details. Please try rephrasing.' });
             }
 
-            const sourceAccount = accounts.find(acc => acc.name === parsedDetails.source_account_name);
-            const destinationAccount = accounts.find(acc => acc.name === parsedDetails.destination_account_name);
+            const sourceAccount = accounts.find(acc => acc.name === parsedDetails.source_account);
+            const destinationAccount = accounts.find(acc => acc.name === parsedDetails.destination_account);
 
             if (!sourceAccount) {
-                return interaction.editReply({ content: `❌ Source account "${parsedDetails.source_account_name}" not found.` });
+                return interaction.editReply({ content: `❌ Source account "${parsedDetails.source_account}" not found.` });
             }
             if (!destinationAccount) {
-                return interaction.editReply({ content: `❌ Destination account "${parsedDetails.destination_account_name}" not found.` });
+                return interaction.editReply({ content: `❌ Destination account "${parsedDetails.destination_account}" not found.` });
+            }
+            if (sourceAccount.id === destinationAccount.id) {
+                return interaction.editReply({ content: '❌ Source and destination accounts cannot be the same.' });
             }
 
             const payees = await actualService.getPayees();
@@ -44,26 +47,28 @@ module.exports = {
                 return interaction.editReply({ content: `❌ Could not find the internal transfer payee for account "${destinationAccount.name}". Please ensure it's set up in Actual.` });
             }
 
-            const amountMilliunits = actualService.utils.amountToMilliunits(-Math.abs(parsedDetails.amount));
+            // Convert amount to a negative integer in cents for the expense transaction.
+            const amountInCents = actualService.utils.amountToInteger(-Math.abs(parsedDetails.amount));
 
             const transaction = {
-                date: parsedDetails.transaction_date,
-                amount: amountMilliunits,
+                date: parsedDetails.date,
+                amount: amountInCents,
                 payee: transferPayee.id,
                 notes: parsedDetails.description,
                 cleared: false,
             };
 
-            await actualService.addTransactions(sourceAccount.id, [transaction]);
+            // Call addTransactions with the runTransfers flag in an options object.
+            await actualService.addTransactions(sourceAccount.id, [transaction], true);
 
             const embed = new EmbedBuilder()
                 .setTitle('↔️ Transfer Logged')
                 .setDescription(parsedDetails.description)
                 .addFields(
-                    { name: 'Amount', value: `$${Math.abs(parsedDetails.amount).toFixed(2)}`, inline: true },
-                    { name: 'From', value: parsedDetails.source_account_name, inline: true },
-                    { name: 'To', value: parsedDetails.destination_account_name, inline: true },
-                    { name: 'Date', value: parsedDetails.transaction_date, inline: true }
+                    { name: 'Amount', value: actualService.formatToIDR(Math.abs(parsedDetails.amount)), inline: true },
+                    { name: 'From', value: parsedDetails.source_account, inline: true },
+                    { name: 'To', value: parsedDetails.destination_account, inline: true },
+                    { name: 'Date', value: parsedDetails.date, inline: true }
                 )
                 .setColor(0x0000FF);
 

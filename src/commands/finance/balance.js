@@ -2,16 +2,6 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { processBalanceQuery } = require('../../services/geminiService');
 const actualService = require('../../services/actualService');
 
-// Helper to format numbers as Indonesian Rupiah
-const formatToIDR = (amount) => {
-    return new Intl.NumberFormat('id-ID', {
-        style: 'currency',
-        currency: 'IDR',
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-    }).format(amount);
-};
-
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('balance')
@@ -33,6 +23,7 @@ module.exports = {
             const categoryNames = categories.map(c => c.name);
 
             const parsedQuery = await processBalanceQuery(query, accountNames, categoryNames);
+            console.log(parsedQuery);
 
             if (!parsedQuery) {
                 return interaction.editReply({ content: "❌ I couldn't understand your query. Please try rephrasing." });
@@ -50,7 +41,7 @@ module.exports = {
                 const balance = balanceInCents / 100;
                 embed.addFields(
                     { name: 'Account', value: targetAccount.name },
-                    { name: 'Balance', value: formatToIDR(balance) }
+                    { name: 'Balance', value: actualService.formatToIDR(balance) }
                 );
             } else if (parsedQuery.query_type === 'summary') {
                  embed.setTitle('All Account Balances');
@@ -58,7 +49,7 @@ module.exports = {
                      if (!account.closed) {
                         const balanceInCents = await actualService.getAccountBalance(account.id);
                         const balance = balanceInCents / 100;
-                        embed.addFields({ name: account.name, value: formatToIDR(balance), inline: true });
+                        embed.addFields({ name: account.name, value: actualService.formatToIDR(balance), inline: true });
                      }
                  }
             } else {

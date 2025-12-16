@@ -15,20 +15,19 @@ const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
  */
 const generateAndValidateJson = async (prompt, jsonSchema, zodSchema, functionName) => {
     try {
-        // Note: genAI.models.generateContent is the new entry point
         const result = await genAI.models.generateContent({
-            model: 'gemini-2.0-flash', // Switched to 2.0-flash (standard for new SDK)
+            model: 'gemini-2.5-flash',
             contents: prompt,
             config: {
                 responseMimeType: 'application/json',
-                responseJsonSchema: jsonSchema, // correct property for this SDK
+                responseJsonSchema: jsonSchema,
             },
         });
 
         // In the new SDK, 'text' is a property, not a function
         const rawText = result.text;
 
-        // console.log("Raw Response:", rawText);
+        console.log("Raw Response: ", rawText);
 
         const responseJson = JSON.parse(rawText);
 
@@ -49,81 +48,98 @@ const processTransaction = async (text, type, accountNames, categoryNames) => {
         description: z.string().describe('A clear, concise description of the transaction.'),
         amount: z.number().positive().describe("The numeric amount, parsed from formats like '20k' to 20000."),
         category: z.enum(categoryNames).describe('The most appropriate category from the provided list.'),
-        account: z.enum(accountNames).describe('The account used, chosen from the provided list.'),
-        payee_name: z.string().optional().describe('The person or business involved (e.g., store for an expense).'),
+        account: z.enum(accountNames).describe('The account used for the transaction. MUST be one of the available accounts.'),
+        payee_name: z.string().optional().describe('The person or business involved (e.g., store for an expense). If not present, this can be omitted.'),
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe("The date in 'YYYY-MM-DD' format. Default to today if not specified."),
-    });
+    }).strict();
 
     const prompt = `
-You are a financial assistant processing an '${type}'. Extract the details from the user's input in Indonesian.
-Today's Date: ${new Date().toISOString().split('T')[0]}
+You are a highly precise financial assistant API. Your ONLY function is to extract details from a user's input and format it into a JSON object.
 
-Available Accounts: ${accountNames.join(', ')}
-Available Categories: ${categoryNames.join(', ')}
+**CRITICAL INSTRUCTIONS:**
+1.  You MUST adhere strictly to the JSON schema provided.
+2.  ONLY output the fields defined in the schema: \`description\`, \`amount\`, \`category\`, \`account\`, \`payee_name\`, \`date\`.
+3.  The 'payee_name' is the merchant or person (e.g., 'Gojek', 'Starbucks'), or an Institution if it's an income (e.g Work, Investment Return).
+4.  The 'description' is a summary.
+5.  The user's input is usually in Indonesian.
+6.  The transaction type is '${type}'.
+7.  The amount is in number format
+8.  Today's date is ${new Date().toISOString().split('T')[0]}. Use this if no date is mentioned in the input.
 
-User Input: "${text}"`;
+**AVAILABLE DATA:**
+- Available Accounts: ${accountNames.join(', ')}
+- Available Categories: ${categoryNames.join(', ')}
+
+**USER INPUT:** "${text}"
+`;
 
     return generateAndValidateJson(
         prompt,
-        zodToJsonSchema(transactionZodSchema),
+        zodToJsonSchema(transactionZodSchema, {target: 'openApi3'}),
         transactionZodSchema,
         'processTransaction'
     );
 };
+
 /**
  * Extracts transfer details from a text input.
- * @param {string} text - The user's input describing the transfer.
- * @param {string[]} accountNames - A list of available account names.
- * @returns {Promise<object|null>} A structured transfer object or null on failure.
  */
 const processTransfer = async (text, accountNames) => {
   const transferZodSchema = z.object({
-    description: z.string().describe('A clear, concise description of the transfer.'),
-    amount: z.number().positive().describe("The numeric amount, parsed from formats like '20k' to 20000."),
-    source_account_name: z.enum(accountNames).describe('The account money is coming FROM, chosen from the list.'),
-    destination_account_name: z.enum(accountNames).describe('The account money is going TO, chosen from the list.'),
-    transaction_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe("The date in 'YYYY-MM-DD' format. Default to today if not specified."),
-  });
+    description: z.string().describe('A clear, concise summary of the transfer event.'),
+    amount: z.number().positive().describe("The numeric amount of the transfer, parsed from formats like '20k' to 20000."),
+    source_account: z.enum(accountNames).describe('The account the money is being moved FROM. This MUST be one of the available accounts.'),
+    destination_account: z.enum(accountNames).describe('The account the money is being moved TO. This MUST be one of the available accounts.'),
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe("The date of the transfer in 'YYYY-MM-DD' format. Default to today if not specified."),
+  }).strict();
 
   const prompt = `
-You are a financial assistant processing a transfer. Extract the details from the user's input in Indonesian.
-Today's Date: ${new Date().toISOString().split('T')[0]}
+You are a highly precise financial assistant API. Your ONLY function is to extract details about a transfer between accounts and format it into a JSON object.
 
-Available Accounts: ${accountNames.join(', ')}
+**CRITICAL INSTRUCTIONS:**
+1.  You MUST adhere strictly to the JSON schema provided.
+2.  ONLY output the fields defined in the schema: \`description\`, \`amount\`, \`source_account\`, \`destination_account\`, \`date\`.
+3.  The 'source_account' is where the money comes FROM.
+4.  The 'destination_account' is where the money goes TO.
+5.  The user's input is usually in Indonesian.
+6.  The 'amount' is in number format
+7.  Today's date is ${new Date().toISOString().split('T')[0]}. Use this if no date is mentioned in the input.
 
-User Input: "${text}"`;
+**AVAILABLE DATA:**
+- Available Accounts: ${accountNames.join(', ')}
+
+**USER INPUT:** "${text}"`;
 
   return generateAndValidateJson(prompt, zodToJsonSchema(transferZodSchema), transferZodSchema, 'processTransfer');
 };
 
 /**
  * Extracts details for a balance query from text.
- * @param {string} text - The user's query.
- * @param {string[]} accountNames - A list of available account names.
- * @param {string[]} categoryNames - A list of available category names.
- * @returns {Promise<object|null>} A structured query object or null on failure.
  */
 const processBalanceQuery = async (text, accountNames, categoryNames) => {
   const balanceQueryZodSchema = z.object({
-    query_type: z.enum(['account', 'category', 'summary']).describe("Identify the user's intent: 'account' for balance inquiries, 'category' for spending reports, or 'summary' for a general overview."),
-    name: z.string().optional().describe("The specific name of the account or category, if mentioned. Can be 'all' for a summary of all accounts or categories."),
-  });
+    query_type: z.enum(['account', 'category', 'summary']).describe("The user's intent. 'account' for a specific account's balance, 'category' for spending in a category, or 'summary' for an overview of all accounts."),
+    name: z.string().optional().describe("The specific name of the account or category being asked about. Can be 'all' for a summary."),
+  }).strict();
 
   const prompt = `
-You are a financial query AI. Your task is to analyze the user's message in Indonesian and extract the necessary details to form a structured JSON query.
+You are a highly precise financial query API. Your ONLY function is to analyze the user's message and extract query details into a structured JSON object.
 
-You must identify the type of query and the specific subject (e.g., an account or category name).
+**CRITICAL INSTRUCTIONS:**
+1.  You MUST adhere strictly to the JSON schema provided.
+2.  ONLY output the fields defined in the schema: \`query_type\` and \`name\`.
+3.  Determine the 'query_type' based on the user's question:
+    - Use 'account' for questions about a specific account's balance.
+    - Use 'category' for questions about spending in a specific category.
+    - Use 'summary' for requests for a general overview or all account balances.
+4.  The 'name' field should contain the specific account or category name mentioned.
+5.  The user's input is usually in Indonesian.
 
-- For questions about account balances, use 'account'.
-- For questions about spending in a category, use 'category'.
-- For general summaries, use 'summary'.
+**AVAILABLE DATA:**
+- Available Accounts: ${accountNames.join(', ')}
+- Available Categories: ${categoryNames.join(', ')}
 
-Available Accounts: ${accountNames.join(', ')}
-Available Categories: ${categoryNames.join(', ')}
-
-User Message: "${text}"
-
-Based on the message, construct a JSON object with 'query_type' and 'name'.`;
+**USER INPUT:** "${text}"`;
 
   return generateAndValidateJson(
     prompt,

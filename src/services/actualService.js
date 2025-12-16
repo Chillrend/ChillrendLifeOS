@@ -78,18 +78,18 @@ const init = async () => {
  * Adds transactions to a specified account in Actual.
  * @param {string} accountId - The ID of the account to add the transaction to.
  * @param {Transaction[]} transactions - An array of transaction objects.
+ * @param {object} [options] - Optional flags.
+ * @param {boolean} runTransfer - Whether to process transfers automatically.
  * @returns {Promise<string[]>} The IDs of the added transactions.
  */
-const addTransactions = async (accountId, transactions) => {
+const addTransactions = async (accountId, transactions, runTransfers = false ) => {
   if (!isInitialized) {
     await init();
   }
 
   try {
-    console.log(`Adding ${transactions.length} transaction(s) to account ${accountId}`);
-    // Note: The new service used `addTransactions`, but `importTransactions` is often better
-    // as it can create payees and apply rules. We will use that one.
-      return await api.importTransactions(accountId, transactions);
+    console.log(`Adding ${transactions.length} transaction(s) to account ${accountId} with options:`, { runTransfers });
+    return await api.addTransactions(accountId, transactions, {runTransfers: runTransfers});
   } catch (error) {
     console.error(`Actual API Error (addTransactions): ${error.message}`);
     throw new Error(`Actual API Error (addTransactions): ${error.message}`);
@@ -192,6 +192,21 @@ const getAccountBalance = async (accountId) => {
     throw new Error(`Actual API Error (getAccountBalance): ${error.message}`);
   }
 };
+
+/**
+ * Formats a numeric amount into Indonesian Rupiah (IDR) currency string.
+ * @param {number} amount - The amount to format.
+ * @returns {string} The formatted currency string (e.g., "Rp 10.000,00").
+ */
+const formatToIDR = (amount) => {
+    return new Intl.NumberFormat('id-ID', {
+        style: 'currency',
+        currency: 'IDR',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }).format(amount);
+};
+
 /**
  * Shuts down the connection to the Actual Budget server.
  */
@@ -213,4 +228,5 @@ module.exports = {
   getPayees,
   shutdown,
   utils: api.utils, // Exposing utils is helpful (e.g., for amountToInteger)
+  formatToIDR,
 };
