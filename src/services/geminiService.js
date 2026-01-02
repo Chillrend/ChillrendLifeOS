@@ -41,6 +41,88 @@ const generateAndValidateJson = async (prompt, jsonSchema, zodSchema, functionNa
 };
 
 /**
+ * Extracts task details from a natural language input.
+ */
+const parseTodo = async (text) => {
+    const todoZodSchema = z.object({
+        title: z.string().describe('The main title of the task.'),
+        notes: z.string().optional().describe('Additional details or a description for the task.'),
+        due: z.string().optional().describe("The due date in 'YYYY-MM-DD' format. If not specified, it can be omitted."),
+    }).strict();
+
+    const prompt = `
+    You are a task management assistant API. Your only function is to extract task details from a user's input and format it into a JSON object.
+
+    **CRITICAL INSTRUCTIONS:**
+    1.  You MUST adhere strictly to the JSON schema provided.
+    2.  ONLY output the fields defined in the schema: \`title\`, \`notes\`, \`due\`.
+    3.  The 'title' is the primary action or subject of the task.
+    4.  The 'notes' field should contain any supplementary details.
+    5.  The 'due' date should be in 'YYYY-MM-DD' format.
+    6.  Today's date is ${new Date().toISOString().split('T')[0]}. Use this as a reference for terms like "tomorrow".
+
+    **USER INPUT:** "${text}"
+    `;
+
+    return generateAndValidateJson(
+        prompt,
+        zodToJsonSchema(todoZodSchema, { target: 'openApi3' }),
+        todoZodSchema,
+        'parseTodo'
+    );
+};
+
+/**
+ * Generates a formatted daily work log for a timesheet.
+ * @param {Array<object>} tasks - A list of completed or in-progress tasks.
+ * @param {Array<object>} comments - A list of comments made today, grouped by task.
+ * @returns {Promise<string|null>} The formatted daily log as a string, or null on failure.
+ */
+const createDailyLog = async (tasks, comments) => {
+    const taskList = tasks.map(t => `- ${t.name} (${t.state.name})`).join('\n');
+    const commentList = comments.map(c => `Task: ${c.task}\n${c.comments.map(text => `  - ${text}`).join('\n')}`).join('\n\n');
+
+    const prompt = `
+    You are an expert assistant who creates daily work logs for timesheets.
+    Based on the provided list of tasks and comments from today, generate a concise and professional summary of the work done in markdown format.
+
+    **Formatting Rules:**
+    - Use markdown bullet points for the summary.
+    - Group related activities under a single task heading if appropriate.
+    - Summarize the key accomplishments and progress for the day.
+    - Be clear, professional, and to the point.
+
+    **Today's Data:**
+
+    **Tasks (Completed or In Progress):**
+    ${taskList || 'No tasks updated.'}
+
+    **Comments Added Today:**
+    ${commentList || 'No comments made.'}
+
+    **Generated Daily Log:**
+    `;
+
+    try {
+        const result = await genAI.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+        });
+
+        const log = result.text;
+        if (!log) {
+             throw new Error("Empty response from Gemini.");
+        }
+        return log;
+
+    } catch (error) {
+        console.error(`[createDailyLog] Gemini API error:`, error.message);
+        return null;
+    }
+};
+
+
+/**
  * Extracts expense or income details from a text input.
  */
 const processTransaction = async (text, type, accountNames, categoryNames) => {
@@ -150,6 +232,8 @@ You are a highly precise financial query API. Your ONLY function is to analyze t
 };
 
 module.exports = {
+  parseTodo,
+  createDailyLog,
   processTransaction,
   processTransfer,
   processBalanceQuery,

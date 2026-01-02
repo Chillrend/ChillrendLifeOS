@@ -1,50 +1,47 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const { google } = require('googleapis');
-const { getAuthenticatedClient } = require('../../services/googleAuth');
+const User = require('../../models/User');
+const PlaneService = require('../../services/planeService');
 const { parseTodo } = require('../../services/geminiService');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('todo')
-        .setDescription('Add a new task to user Default List')
+        .setDescription('Add a new task to Plane using natural language')
         .addStringOption(option =>
             option.setName('task')
-                .setDescription('The task description (e.g. "Buy milk tomorrow")')
+                .setDescription('The task description (e.g., "Fix server A now")')
                 .setRequired(true)),
     async execute(interaction) {
         await interaction.deferReply();
 
         try {
             const rawInput = interaction.options.getString('task');
+            const user = await User.findOne({ discordId: interaction.user.id });
 
-            // 1. Authenticate
-            const authClient = await getAuthenticatedClient(interaction.user.id);
-            const service = google.tasks({ version: 'v1', auth: authClient });
+            if (!user || !user.planeApiKey) {
+                return interaction.editReply('You need to link your Plane API key first! Use the `/link` command.');
+            }
 
-            // 2. Parse with AI
+            // 1. Parse the input with Gemini
             const taskDetails = await parseTodo(rawInput);
+            if (!taskDetails) {
+                return interaction.editReply('❌ Could not understand the task. Please try again with a clearer description.');
+            }
 
-            // 3. Insert into Default List ('@default')
-            const response = await service.tasks.insert({
-                tasklist: '@default',
-                requestBody: {
-                    title: taskDetails.title,
-                    notes: taskDetails.notes,
-                    due: taskDetails.due
-                }
-            });
+            // 2. Create the task in Plane
+            const plane = new PlaneService(user.planeApiKey);
+            const createdTask = await plane.createTask(taskDetails);
 
-            const task = response.data;
-
+            // 3. Respond to the user
             const embed = new EmbedBuilder()
-                .setTitle('✅ Task Added')
+                .setTitle('✅ Task Added to Plane')
                 .addFields(
-                    { name: 'Title', value: task.title },
-                    { name: 'Due', value: task.due ? new Date(task.due).toLocaleString() : 'No due date' },
-                    { name: 'Notes', value: task.notes || 'None' }
+                    { name: 'Title', value: createdTask.name },
+                    { name: 'Due', value: createdTask.target_date ? new Date(createdTask.target_date).toLocaleDateString() : 'No due date' },
+                    { name: 'Notes', value: createdTask.description || 'None' }
                 )
                 .setColor(0x00FF00)
-                .setFooter({ text: `Task ID: ${task.id}` });
+                .setFooter({ text: `Task ID: ${createdTask.id}` });
 
             await interaction.editReply({ embeds: [embed] });
 
