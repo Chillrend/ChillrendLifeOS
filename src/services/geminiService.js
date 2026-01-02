@@ -41,36 +41,61 @@ const generateAndValidateJson = async (prompt, jsonSchema, zodSchema, functionNa
 };
 
 /**
- * Extracts task details from a natural language input.
+ * Refines a task's title and description and determines its properties.
  */
-const parseTodo = async (text) => {
-    const todoZodSchema = z.object({
-        title: z.string().describe('The main title of the task.'),
-        notes: z.string().optional().describe('Additional details or a description for the task.'),
-        due: z.string().optional().describe("The due date in 'YYYY-MM-DD' format. If not specified, it can be omitted."),
+const refineTask = async (title, description) => {
+    const states = ['Todo', 'In Progress', 'Paused', 'Done', 'Canceled'];
+    const priorities = ['Urgent', 'High', 'Medium', 'Low'];
+    const labels = ['Ideas', 'Incident', 'Ops', 'Development', 'Networking'];
+
+    const taskRefinementZodSchema = z.object({
+        title: z.string().describe('A clear, concise, and action-oriented title for the task.'),
+        notes: z.string().describe('A well-structured breakdown of the task. Use markdown for clarity (e.g., bullet points, sub-tasks).'),
+        state: z.enum(states).describe('The current state of the task. Default to "Todo" unless specified otherwise.'),
+        priority: z.enum(priorities).optional().describe('The priority level of the task. Infer from the user\'s language (e.g., "now" -> "urgent"). Omit if no priority is mentioned.'),
+        labels: z.array(z.enum(labels)).describe('A list of relevant labels. Infer from the task content.'),
     }).strict();
 
     const prompt = `
-    You are a task management assistant API. Your only function is to extract task details from a user's input and format it into a JSON object.
+    You are a productivity expert API. Your job is to analyze a user's task, refine it, and categorize it.
 
     **CRITICAL INSTRUCTIONS:**
-    1.  You MUST adhere strictly to the JSON schema provided.
-    2.  ONLY output the fields defined in the schema: \`title\`, \`notes\`, \`due\`.
-    3.  The 'title' is the primary action or subject of the task.
-    4.  The 'notes' field should contain any supplementary details.
-    5.  The 'due' date should be in 'YYYY-MM-DD' format.
-    6.  Today's date is ${new Date().toISOString().split('T')[0]}. Use this as a reference for terms like "tomorrow".
+    1.  **Refine Title:** Create a new title that is clear, concise, and action-oriented.
+    2.  **Structure Notes:** Break down the description into structured markdown notes.
+    3.  **Determine State:** Choose the most appropriate state. Default to "Todo".
+    4.  **Determine Priority:** Infer the priority from the user's language. If no priority is implied, OMIT the field.
+    5.  **Determine Labels:** Select relevant labels that categorize the task.
+    7.  Adhere strictly to the JSON schema and the available options.
 
-    **USER INPUT:** "${text}"
+    **Available Options:**
+    - **States:** ${states.join(', ')}
+    - **Priorities:** ${priorities.join(', ')}
+    - **Labels:** ${labels.join(', ')}
+
+    **USER'S TASK:**
+    - **Title:** "${title}"
+    - **Description:** "${description}"
     `;
 
-    return generateAndValidateJson(
+    const result = await generateAndValidateJson(
         prompt,
-        zodToJsonSchema(todoZodSchema, { target: 'openApi3' }),
-        todoZodSchema,
-        'parseTodo'
+        zodToJsonSchema(taskRefinementZodSchema, { target: 'openApi3' }),
+        taskRefinementZodSchema,
+        'refineTask'
     );
+
+    if (!result) {
+        return {
+            title: title,
+            notes: description,
+            state: 'Todo',
+            labels: [],
+        };
+    }
+
+    return result;
 };
+
 
 /**
  * Generates a formatted daily work log for a timesheet.
@@ -144,9 +169,8 @@ You are a highly precise financial assistant API. Your ONLY function is to extra
 3.  The 'payee_name' is the merchant or person (e.g., 'Gojek', 'Starbucks'), or an Institution if it's an income (e.g Work, Investment Return).
 4.  The 'description' is a summary.
 5.  The user's input is usually in Indonesian.
-6.  The transaction type is '${type}'.
-7.  The amount is in number format
-8.  Today's date is ${new Date().toISOString().split('T')[0]}. Use this if no date is mentioned in the input.
+6.  The amount is in number format
+7.  Today's date is ${new Date().toISOString().split('T')[0]}. Use this if no date is mentioned in the input.
 
 **AVAILABLE DATA:**
 - Available Accounts: ${accountNames.join(', ')}
@@ -214,7 +238,7 @@ You are a highly precise financial query API. Your ONLY function is to analyze t
     - Use 'account' for questions about a specific account's balance.
     - Use 'category' for questions about spending in a specific category.
     - Use 'summary' for requests for a general overview or all account balances.
-4.  The 'name' field should contain the specific account or category name mentioned.
+4.  The 'name' field should contain the specific account or category name mentioned, return empty string if 'summary' is selected.
 5.  The user's input is usually in Indonesian.
 
 **AVAILABLE DATA:**
@@ -232,7 +256,7 @@ You are a highly precise financial query API. Your ONLY function is to analyze t
 };
 
 module.exports = {
-  parseTodo,
+  refineTask,
   createDailyLog,
   processTransaction,
   processTransfer,

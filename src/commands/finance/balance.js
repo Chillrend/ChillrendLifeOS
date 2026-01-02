@@ -2,6 +2,40 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { processBalanceQuery } = require('../../services/geminiService');
 const actualService = require('../../services/actualService');
 
+// --- Helper Functions for Category Display ---
+
+/**
+ * Creates a more visually appealing progress bar using emoji.
+ * @param {number} remainingPercent - The percentage of the budget remaining (0 to 1).
+ * @returns {string} The emoji progress bar string.
+ */
+const createRemainingBar = (remainingPercent) => {
+    const filledCount = Math.round(remainingPercent * 10);
+    const emptyCount = 10 - filledCount;
+    
+    if (remainingPercent < 0) {
+        return `🔥 Overspent`;
+    }
+    
+    const filledEmoji = '🟩';
+    const emptyEmoji = '🟥';
+    
+    return `${filledEmoji.repeat(filledCount)}${emptyEmoji.repeat(emptyCount)} ${Math.round(remainingPercent * 100)}%`;
+};
+
+/**
+ * Determines the embed color based on the percentage of budget remaining.
+ * @param {number} remainingPercent - The percentage of the budget remaining (0 to 1).
+ * @returns {number} The hex color code for the embed.
+ */
+const getEmbedColor = (remainingPercent) => {
+    if (remainingPercent < 0) return 0xFF0000; // Red for overspent
+    if (remainingPercent < 0.25) return 0xFFA500; // Orange for low budget
+    if (remainingPercent < 0.5) return 0xFFFF00; // Yellow for caution
+    return 0x00BFFF; // Default blue for good
+};
+
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('balance')
@@ -29,7 +63,7 @@ module.exports = {
                 return interaction.editReply({ content: "❌ I couldn't understand your query. Please try rephrasing." });
             }
 
-            const embed = new EmbedBuilder().setTitle('Balance Inquiry').setColor(0x00BFFF);
+            const embed = new EmbedBuilder().setColor(0x00BFFF); // Default color
 
             if (parsedQuery.query_type === 'account') {
                 const targetAccount = accounts.find(a => a.name === parsedQuery.name);
@@ -38,22 +72,39 @@ module.exports = {
                 }
 
                 const balanceInCents = await actualService.getAccountBalance(targetAccount.id);
-                const balance = balanceInCents / 100;
-                embed.addFields(
-                    { name: 'Account', value: targetAccount.name },
-                    { name: 'Balance', value: actualService.formatToIDR(balance) }
-                );
+                embed.setTitle(`Account Balance: ${targetAccount.name}`)
+                     .addFields({ name: 'Balance', value: actualService.formatToIDR(balanceInCents / 100) });
+
             } else if (parsedQuery.query_type === 'summary') {
                  embed.setTitle('All Account Balances');
                  for (const account of accounts) {
                      if (!account.closed) {
                         const balanceInCents = await actualService.getAccountBalance(account.id);
-                        const balance = balanceInCents / 100;
-                        embed.addFields({ name: account.name, value: actualService.formatToIDR(balance), inline: true });
+                        embed.addFields({ name: account.name, value: actualService.formatToIDR(balanceInCents / 100), inline: true });
                      }
                  }
+            } else if (parsedQuery.query_type === 'category') {
+                const targetCategory = categories.find(c => c.name === parsedQuery.name);
+                if (!targetCategory) {
+                    return interaction.editReply({ content: `❌ Category "${parsedQuery.name}" not found.` });
+                }
+
+                const spendingInCents = await actualService.getCategorySpending(targetCategory.id);
+                const budgetedInCents = await actualService.getCategoryBudget(targetCategory.id);
+                const remainingInCents = budgetedInCents - spendingInCents;
+
+                const remainingPercent = budgetedInCents > 0 ? remainingInCents / budgetedInCents : 0;
+
+                embed.setTitle(`Spending Report: ${targetCategory.name}`)
+                     .setColor(getEmbedColor(remainingPercent))
+                     .addFields(
+                        { name: 'Spent', value: actualService.formatToIDR(spendingInCents / 100), inline: true },
+                        { name: 'Budgeted', value: actualService.formatToIDR(budgetedInCents / 100), inline: true },
+                        { name: 'Remaining', value: actualService.formatToIDR(remainingInCents / 100), inline: true },
+                        { name: 'Budget Health', value: budgetedInCents > 0 ? createRemainingBar(remainingPercent) : 'Budget not set', inline: false }
+                     );
             } else {
-                return interaction.editReply({ content: 'Sorry, querying category spending is not fully implemented yet.' });
+                return interaction.editReply({ content: 'Sorry, I can only handle account, category, and summary queries right now.' });
             }
 
             await interaction.editReply({ embeds: [embed] });

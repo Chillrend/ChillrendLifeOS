@@ -1,16 +1,20 @@
 const { PlaneClient } = require('@makeplane/plane-node-sdk');
-
-const PLANE_WORKSPACE_ID = 'chillrends-personal-workspace';
-const PLANE_PROJECT_ID = '75fc170a-14d2-4d52-8572-42c9b05a5779';
+const { marked } = require('marked');
+require('dotenv').config();
 
 class PlaneService {
     constructor(apiKey) {
-        this.plane = new PlaneClient({ apiKey });
+        this.plane = new PlaneClient({ 
+            apiKey, 
+            baseUrl: process.env.PLANE_BASE_URL 
+        });
+        this.workspaceId = process.env.PLANE_WORKSPACE_ID;
+        this.projectId = process.env.PLANE_PROJECT_ID;
     }
 
     async getTasks() {
         try {
-            const response = await this.plane.workItems.list(PLANE_WORKSPACE_ID, PLANE_PROJECT_ID);
+            const response = await this.plane.workItems.list(this.workspaceId, this.projectId);
             return response.results || [];
         } catch (error) {
             console.error('Error fetching tasks from Plane:', error);
@@ -20,23 +24,53 @@ class PlaneService {
 
     async createTask(taskDetails) {
         try {
-            return await this.plane.workItems.create(PLANE_WORKSPACE_ID, PLANE_PROJECT_ID, {
+            const payload = {
                 name: taskDetails.title,
-                description: taskDetails.notes || '',
-            });
+                description_html: marked(taskDetails.notes || ''),
+                state: taskDetails.stateId,
+                labels: taskDetails.labelIds,
+                start_date: new Date().toISOString().split('T')[0],
+                assignees: ['68586bff-d00b-4e5a-9c4c-3b9b2a2f5091'],
+            };
+
+            if (taskDetails.priority) {
+                payload.priority = taskDetails.priority;
+            }
+
+            return await this.plane.workItems.create(this.workspaceId, this.projectId, payload);
         } catch (error) {
-            console.error('Error creating task in Plane:', error);
+            console.error('Error creating task in Plane:', JSON.stringify(error, null, 2));
             throw new Error('Could not create task in Plane.');
         }
     }
 
     async getComments(issueId) {
         try {
-            const response = await this.plane.workItems.comments.list(PLANE_WORKSPACE_ID, PLANE_PROJECT_ID, issueId);
+            const response = await this.plane.workItems.comments.list(this.workspaceId, this.projectId, issueId);
             return response.results || [];
         } catch (error) {
             console.error(`Error fetching comments for issue ${issueId} from Plane:`, error);
             throw new Error(`Could not fetch comments for issue ${issueId}.`);
+        }
+    }
+
+    async getStates() {
+        try {
+            const response = await this.plane.states.list(this.workspaceId, this.projectId);
+            return response.results || [];
+        } catch (error) {
+            console.error('Error fetching states from Plane:', error);
+            return [];
+        }
+    }
+
+    async getLabels() {
+        try {
+            const response = await this.plane.labels.list(this.workspaceId, this.projectId);
+            return response.results || [];
+        } catch (error) {
+            console.error('Error fetching labels from Plane:', error);
+            return [];
         }
     }
 }

@@ -1,44 +1,77 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const User = require('../../models/User');
 const PlaneService = require('../../services/planeService');
-const { parseTodo } = require('../../services/geminiService');
+const { refineTask } = require('../../services/geminiService');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('todo')
-        .setDescription('Add a new task to Plane using natural language')
+        .setDescription('Add a new task to Plane, refined by AI')
         .addStringOption(option =>
-            option.setName('task')
-                .setDescription('The task description (e.g., "Fix server A now")')
+            option.setName('title')
+                .setDescription('The title of the task')
+                .setRequired(true))
+        .addStringOption(option =>
+            option.setName('description')
+                .setDescription('A detailed description of the task')
                 .setRequired(true)),
     async execute(interaction) {
-        await interaction.deferReply();
+        await interaction.deferReply({ ephemeral: true });
 
         try {
-            const rawInput = interaction.options.getString('task');
+            const initialTitle = interaction.options.getString('title');
+            const initialDescription = interaction.options.getString('description');
             const user = await User.findOne({ discordId: interaction.user.id });
 
             if (!user || !user.planeApiKey) {
                 return interaction.editReply('You need to link your Plane API key first! Use the `/link` command.');
             }
 
-            // 1. Parse the input with Gemini
-            const taskDetails = await parseTodo(rawInput);
-            if (!taskDetails) {
-                return interaction.editReply('❌ Could not understand the task. Please try again with a clearer description.');
+            const plane = new PlaneService(user.planeApiKey);
+
+            // 1. Fetch available states and labels from Plane
+            const [availableStates, availableLabels] = await Promise.all([
+                plane.getStates(),
+                plane.getLabels(),
+            ]);
+
+            if (!availableStates.length) {
+                return interaction.editReply('Could not fetch task states from Plane. Please check the API key and configuration.');
             }
 
-            // 2. Create the task in Plane
-            const plane = new PlaneService(user.planeApiKey);
-            const createdTask = await plane.createTask(taskDetails);
+            // 2. Refine the task with Gemini
+            const { title, notes, state, priority, labels, startDate } = await refineTask(initialTitle, initialDescription);
 
-            // 3. Respond to the user
+            // 3. Find the corresponding state and label IDs
+            const stateId = availableStates.find(s => s.name === state)?.id;
+            if (!stateId) {
+                return interaction.editReply(`Could not find a matching state ID for "${state}". Please check the available states in your Plane project.`);
+            }
+            
+            const labelIds = labels
+                .map(labelName => availableLabels.find(l => l.name === labelName)?.id)
+                .filter(id => id); // Filter out any undefined IDs
+
+            // 4. Create the task in Plane
+            const createdTask = await plane.createTask({
+                title: title,
+                notes: notes,
+                stateId: stateId,
+                priority: priority.toLowerCase(),
+                labelIds: labelIds,
+            });
+
+            // 5. Respond to the user
             const embed = new EmbedBuilder()
-                .setTitle('✅ Task Added to Plane')
+                .setTitle('✅ Task Added & Refined')
+                .setDescription('Your task has been intelligently refined and added to Plane.')
                 .addFields(
                     { name: 'Title', value: createdTask.name },
-                    { name: 'Due', value: createdTask.target_date ? new Date(createdTask.target_date).toLocaleDateString() : 'No due date' },
-                    { name: 'Notes', value: createdTask.description || 'None' }
+                    { name: 'Notes', value: notes || 'None' },
+                    { name: 'State', value: state, inline: true },
+                    { name: 'Priority', value: priority || 'None', inline: true },
+                    { name: 'Labels', value: labels.join(', ') || 'None', inline: true },
+                    { name: 'Start Date', value: new Date().toISOString().split('T')[0], inline: true }
                 )
                 .setColor(0x00FF00)
                 .setFooter({ text: `Task ID: ${createdTask.id}` });
@@ -48,7 +81,7 @@ module.exports = {
         } catch (error) {
             console.error('Todo Command Error:', error);
             await interaction.editReply({
-                content: `❌ Error: ${error.message}. Make sure you have run /link.`
+                content: `❌ An error occurred: ${error.message}. Please ensure your Plane API key is correct and you have run /link.`
             });
         }
     },

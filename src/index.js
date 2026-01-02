@@ -1,16 +1,18 @@
 require('dotenv').config();
 const fs = require('node:fs');
 const path = require('node:path');
-const { Client, Collection, GatewayIntentBits, REST, Routes } = require('discord.js');
+const { Client, Collection, GatewayIntentBits } = require('discord.js');
 const mongoose = require('mongoose');
 const express = require('express');
-const { google } = require('googleapis');
 const User = require('./models/User');
 
 // --- Configuration ---
 const PORT = 3000;
 const app = express();
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+
+// Check for development environment
+const isDev = process.env.NODE_ENV === 'development';
 
 client.commands = new Collection();
 const foldersPath = path.join(__dirname, 'commands');
@@ -23,6 +25,7 @@ for (const folder of commandFolders) {
         const filePath = path.join(commandsPath, file);
         const command = require(filePath);
         if ('data' in command && 'execute' in command) {
+            // Store commands by their original name
             client.commands.set(command.data.name, command);
         } else {
             console.log(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
@@ -56,7 +59,14 @@ client.on('interactionCreate', async interaction => {
 
     if (!interaction.isChatInputCommand()) return;
 
-    const command = client.commands.get(interaction.commandName);
+    let commandName = interaction.commandName;
+
+    // If in dev mode, check for 'dev-' prefix and remove it
+    if (isDev && commandName.startsWith('dev-')) {
+        commandName = commandName.slice(4);
+    }
+
+    const command = client.commands.get(commandName);
 
     if (!command) {
         console.error(`No command matching ${interaction.commandName} was found.`);
@@ -84,15 +94,11 @@ app.get('/auth/callback', async (req, res) => {
 
     try {
         const { tokens } = await oauth2Client.getToken(code);
-        // Assuming single user bot, we can either hardcode ID or pass it via state in the auth url. 
-        // For simplicity in this private bot, we update the OWNER_ID's record.
-
         await User.findOneAndUpdate(
             { discordId: process.env.OWNER_ID },
             { googleTokens: tokens },
             { upsert: true, new: true }
         );
-
         res.send('Authentication successful! You can close this window.');
     } catch (error) {
         console.error('Error retrieving access token', error);
