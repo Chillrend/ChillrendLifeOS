@@ -214,7 +214,7 @@ You are a highly precise financial query API. Your ONLY function is to analyze t
     - Use 'account' for questions about a specific account's balance.
     - Use 'category' for questions about spending in a specific category.
     - Use 'summary' for requests for a general overview or all account balances.
-4.  The 'name' field should contain the specific account or category name mentioned.
+4.  The 'name' field should contain the specific account or category name mentioned, return empty string if 'summary' is selected.
 5.  The user's input is usually in Indonesian.
 
 **AVAILABLE DATA:**
