@@ -5,7 +5,7 @@ const PlaneService = require('../../services/planeService');
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('backlog')
-        .setDescription('View your tasks from Plane'),
+        .setDescription('View your active tasks from Plane (Todo & In Progress)'),
     async execute(interaction) {
         await interaction.deferReply();
 
@@ -17,23 +17,41 @@ module.exports = {
             }
 
             const plane = new PlaneService(user.planeApiKey);
-            const tasks = await plane.getTasks();
+            // 1. Fetch all tasks and all states
+            const [tasks, states] = await Promise.all([
+                plane.getTasks(), // Fetch all tasks without filters
+                plane.getStates()
+            ]);
 
-            if (tasks.length === 0) {
-                return await interaction.editReply('📭 Your Plane task list is empty!');
+            // 2. Create a map for quick state lookup
+            const stateMap = new Map(states.map(s => [s.id, s.name]));
+
+            // 3. Filter tasks manually
+            const todoTasks = tasks.filter(t => stateMap.get(t.state) === 'Todo');
+            const inProgressTasks = tasks.filter(t => stateMap.get(t.state) === 'In Progress');
+
+            if (todoTasks.length === 0 && inProgressTasks.length === 0) {
+                return await interaction.editReply('🎉 No active tasks in your backlog!');
             }
 
             const embed = new EmbedBuilder()
-                .setTitle(`🗃️ Your Plane Tasks (${tasks.length} items)`)
+                .setTitle('🗃️ Your Active Backlog')
                 .setColor(0x808080);
 
-            const displayTasks = tasks.slice(0, 15);
-            const listStr = displayTasks.map(t => `• ${t.title}`).join('\n');
+            if (inProgressTasks.length > 0) {
+                const listStr = inProgressTasks
+                    .slice(0, 15)
+                    .map(t => `• \`#CHL-${t.sequence_id}\` ${t.name}`)
+                    .join('\n');
+                embed.addFields({ name: `🚀 In Progress (${inProgressTasks.length})`, value: listStr });
+            }
 
-            embed.addFields({ name: 'Tasks', value: listStr || 'None' });
-
-            if (tasks.length > 15) {
-                embed.setFooter({ text: `...and ${tasks.length - 15} more items.` });
+            if (todoTasks.length > 0) {
+                const listStr = todoTasks
+                    .slice(0, 15)
+                    .map(t => `• \`#CHL-${t.sequence_id}\` ${t.name}`)
+                    .join('\n');
+                embed.addFields({ name: `📥 Todo (${todoTasks.length})`, value: listStr });
             }
 
             await interaction.editReply({ embeds: [embed] });

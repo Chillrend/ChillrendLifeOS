@@ -41,6 +41,38 @@ const generateAndValidateJson = async (prompt, jsonSchema, zodSchema, functionNa
 };
 
 /**
+ * Infers a date from a natural language string.
+ * @param {string} text - The natural language date input (e.g., "yesterday").
+ * @returns {Promise<string|null>} The date in YYYY-MM-DD format, or null on failure.
+ */
+const inferDate = async (text) => {
+    const dateZodSchema = z.object({
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe("The inferred date in 'YYYY-MM-DD' format."),
+    }).strict();
+
+    const prompt = `
+    You are a date parsing API. Your only function is to determine the exact date in YYYY-MM-DD format from a user's natural language input.
+    
+    **CRITICAL INSTRUCTIONS:**
+    1.  Today's date is ${new Date().toISOString().split('T')[0]}.
+    2.  Analyze the user's input and resolve it to a single, specific date.
+    3.  Your output MUST be a JSON object with a single "date" field in "YYYY-MM-DD" format.
+
+    **USER INPUT:** "${text}"
+    `;
+
+    const result = await generateAndValidateJson(
+        prompt,
+        zodToJsonSchema(dateZodSchema),
+        dateZodSchema,
+        'inferDate'
+    );
+
+    return result ? result.date : null;
+};
+
+
+/**
  * Refines a task's title and description and determines its properties.
  */
 const refineTask = async (title, description) => {
@@ -100,32 +132,33 @@ const refineTask = async (title, description) => {
 /**
  * Generates a formatted daily work log for a timesheet.
  * @param {Array<object>} tasks - A list of completed or in-progress tasks.
- * @param {Array<object>} comments - A list of comments made today, grouped by task.
+ * @param {string} displayDate - The date for which the log is being generated (DD-MM-YYYY).
  * @returns {Promise<string|null>} The formatted daily log as a string, or null on failure.
  */
-const createDailyLog = async (tasks, comments) => {
-    const taskList = tasks.map(t => `- ${t.name} (${t.state.name})`).join('\n');
-    const commentList = comments.map(c => `Task: ${c.task}\n${c.comments.map(text => `  - ${text}`).join('\n')}`).join('\n\n');
+const createDailyLog = async (tasks, displayDate) => {
+    const taskList = tasks.map(t => {
+        // Strip HTML tags from the description to get plain text
+        const notes = t.description_html ? t.description_html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() : 'No details provided.';
+        return `Task: ${t.name} (Status: ${t.state.name})\nDetails: ${notes}`;
+    }).join('\n\n');
 
     const prompt = `
-    You are an expert assistant who creates daily work logs for timesheets.
-    Based on the provided list of tasks and comments from today, generate a concise and professional summary of the work done in markdown format.
+    You are an expert assistant who creates daily work logs for a company timesheet.
+    Your output will be copied directly into a WYSIWYG editor, so it must be plain text.
 
-    **Formatting Rules:**
-    - Use markdown bullet points for the summary.
-    - Group related activities under a single task heading if appropriate.
-    - Summarize the key accomplishments and progress for the day.
-    - Be clear, professional, and to the point.
+    **CRITICAL INSTRUCTIONS:**
+    1.  **DO NOT USE MARKDOWN.** No bolding (**), no italics (*), no code blocks (\`\`\`).
+    2.  Generate a concise, professional summary based on the tasks provided for ${displayDate}.
+    3.  Start with a general title for the day's activities.
+    4.  Use simple bullet points (e.g., a hyphen '-' or a bullet '•') for each major activity.
+    5.  Incorporate key details from the task notes to make the summary informative.
+    6.  For 'In Progress' tasks, use phrases like "Continued work on..." or "Advanced the project by...".
+    7.  For 'Done' tasks, state the accomplishment clearly.
 
-    **Today's Data:**
+    **Data for ${displayDate}:**
+    ${taskList || 'No tasks to report.'}
 
-    **Tasks (Completed or In Progress):**
-    ${taskList || 'No tasks updated.'}
-
-    **Comments Added Today:**
-    ${commentList || 'No comments made.'}
-
-    **Generated Daily Log:**
+    **Generated Plain Text Log:**
     `;
 
     try {
@@ -256,6 +289,7 @@ You are a highly precise financial query API. Your ONLY function is to analyze t
 };
 
 module.exports = {
+  inferDate,
   refineTask,
   createDailyLog,
   processTransaction,
