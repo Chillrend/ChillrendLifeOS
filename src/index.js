@@ -1,7 +1,7 @@
 require('dotenv').config();
 const fs = require('node:fs');
 const path = require('node:path');
-const { Client, Collection, GatewayIntentBits } = require('discord.js');
+const { Client, Collection, GatewayIntentBits, InteractionType } = require('discord.js');
 const mongoose = require('mongoose');
 const express = require('express');
 const User = require('./models/User');
@@ -25,7 +25,6 @@ for (const folder of commandFolders) {
         const filePath = path.join(commandsPath, file);
         const command = require(filePath);
         if ('data' in command && 'execute' in command) {
-            // Store commands by their original name
             client.commands.set(command.data.name, command);
         } else {
             console.log(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
@@ -57,15 +56,10 @@ client.on('interactionCreate', async interaction => {
         return;
     }
 
-    if (!interaction.isChatInputCommand()) return;
-
     let commandName = interaction.commandName;
-
-    // If in dev mode, check for 'dev-' prefix and remove it
     if (isDev && commandName.startsWith('dev-')) {
         commandName = commandName.slice(4);
     }
-
     const command = client.commands.get(commandName);
 
     if (!command) {
@@ -73,14 +67,22 @@ client.on('interactionCreate', async interaction => {
         return;
     }
 
-    try {
-        await command.execute(interaction);
-    } catch (error) {
-        console.error(error);
-        if (interaction.replied || interaction.deferred) {
-            await interaction.followUp({ content: 'There was an error executing this command!', ephemeral: true });
-        } else {
-            await interaction.reply({ content: 'There was an error executing this command!', ephemeral: true });
+    if (interaction.isAutocomplete()) {
+        try {
+            await command.autocomplete(interaction);
+        } catch (error) {
+            console.error('Autocomplete Error:', error);
+        }
+    } else if (interaction.isChatInputCommand()) {
+        try {
+            await command.execute(interaction);
+        } catch (error) {
+            console.error(error);
+            if (interaction.replied || interaction.deferred) {
+                await interaction.followUp({ content: 'There was an error executing this command!', ephemeral: true });
+            } else {
+                await interaction.reply({ content: 'There was an error executing this command!', ephemeral: true });
+            }
         }
     }
 });

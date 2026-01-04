@@ -24,32 +24,6 @@ class PlaneService {
         }
     }
 
-    async archiveTask(taskId) {
-        try {
-            const url = new URL(`${this.baseUrl}/api/workspaces/${this.workspaceId}/projects/${this.projectId}/issues/${taskId}/archive/`);
-
-            const response = await fetch(url.toString(), {
-                method: 'POST',
-                headers: {
-                    'x-api-key': this.apiKey,
-                    'Content-Type': 'application/json'
-                }
-            });
-
-            if (!response.ok) {
-                const errorBody = await response.text();
-                console.error(`Error archiving task ${taskId}:`, response.status, errorBody);
-                // Don't throw here, so one failure doesn't stop the whole process
-                return { success: false, taskId };
-            }
-
-            return { success: true, taskId };
-        } catch (error) {
-            console.error(`Error in archiveTask for ${taskId}:`, error);
-            return { success: false, taskId };
-        }
-    }
-
     async createTask(taskDetails) {
         try {
             const payload = {
@@ -69,6 +43,59 @@ class PlaneService {
         } catch (error) {
             console.error('Error creating task in Plane:', JSON.stringify(error, null, 2));
             throw new Error('Could not create task in Plane.');
+        }
+    }
+
+    async updateTaskState(taskId, stateId) {
+        try {
+            const payload = {
+                state: stateId,
+            };
+            return await this.plane.workItems.update(this.workspaceId, this.projectId, taskId, payload);
+        } catch (error) {
+            console.error(`Error updating task ${taskId} in Plane:`, JSON.stringify(error, null, 2));
+            throw new Error('Could not update task in Plane.');
+        }
+    }
+
+    async getCycles() {
+        try {
+            const response = await this.plane.cycles.list(this.workspaceId, this.projectId);
+            return response.results || [];
+        } catch (error) {
+            console.error('Error fetching cycles from Plane:', error);
+            throw new Error('Could not fetch cycles from Plane.');
+        }
+    }
+
+    async createCycle(cycleDetails) {
+        try {
+            cycleDetails.project_id = this.projectId;
+            return await this.plane.cycles.create(this.workspaceId, this.projectId, cycleDetails);
+        } catch (error) {
+            console.error('Error creating cycle in Plane:', JSON.stringify(error, null, 2));
+            throw new Error('Could not create cycle in Plane.');
+        }
+    }
+
+    async addIssuesToCycle(cycleId, issueIds) {
+        try {
+            // Replaced fetch with SDK call
+            await this.plane.cycles.addWorkItemsToCycle(this.workspaceId, this.projectId, cycleId, issueIds);
+        } catch (error) {
+            console.error(`Error in addIssuesToCycle for ${cycleId}:`, error);
+            throw new Error('Could not add issues to cycle.');
+        }
+    }
+
+    async archiveCycle(cycleId) {
+        try {
+            // Replaced fetch with SDK call
+            await this.plane.cycles.archive(this.workspaceId, this.projectId, cycleId);
+            return { success: true, cycleId };
+        } catch (error) {
+            console.error(`Error in archiveCycle for ${cycleId}:`, error);
+            return { success: false, cycleId };
         }
     }
 
