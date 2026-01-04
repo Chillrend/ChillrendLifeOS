@@ -93,11 +93,18 @@ const refineTask = async (title, description) => {
 
     **CRITICAL INSTRUCTIONS:**
     1.  **Refine Title:** Create a new title that is clear, concise, and action-oriented.
-    2.  **Structure Notes:** Break down the description into structured markdown notes.
+    2.  **Structure notes:** Break down the description into structured markdown notes.
     3.  **Determine State:** Choose the most appropriate state. Default to "Todo".
-    4.  **Determine Priority:** Infer the priority from the user's language. If no priority is implied, OMIT the field.
+    4.  **Determine Priority:** Infer the priority from the user's language. If no priority is implied, set to 'low'.
     5.  **Determine Labels:** Select relevant labels that categorize the task.
-    7.  Adhere strictly to the JSON schema and the available options.
+    7.  **IMPORTANT** Adhere strictly to these JSON schema and the available options.
+    {
+        title: string,
+        notes: string,
+        state: enum('Todo', 'In Progress', 'Paused', 'Done', 'Canceled'),
+        priority: enum('Urgent', 'High', 'Medium', 'Low'),
+        labels: string[enum('Ideas', 'Incident', 'Ops', 'Development', 'Networking')],
+    }
 
     **Available Options:**
     - **States:** ${states.join(', ')}
