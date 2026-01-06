@@ -22,18 +22,24 @@ module.exports = {
 
             const dateString = interaction.options.getString('date');
             let targetDate;
+            let displayDate;
 
             if (dateString) {
-                targetDate = await inferDate(dateString);
-                if (!targetDate) {
+                const inferred = await inferDate(dateString);
+                if (!inferred) {
                     return interaction.editReply('Could not understand the date. Please try a different format (e.g., "yesterday", "2 days ago", "2023-10-27").');
                 }
+                targetDate = inferred;
+                const [year, month, day] = targetDate.split('-');
+                displayDate = `${day}-${month}-${year}`;
             } else {
-                targetDate = new Date().toISOString().split('T')[0];
+                const today = new Date();
+                targetDate = today.toISOString().split('T')[0];
+                const day = String(today.getDate()).padStart(2, '0');
+                const month = String(today.getMonth() + 1).padStart(2, '0');
+                const year = today.getFullYear();
+                displayDate = `${day}-${month}-${year}`;
             }
-
-            const [year, month, day] = targetDate.split('-');
-            const displayDate = `${day}-${month}-${year}`;
 
             const plane = new PlaneService(user.planeApiKey);
             const [tasks, states] = await Promise.all([plane.getTasks(), plane.getStates()]);

@@ -155,7 +155,7 @@ const createDailyLog = async (tasks, displayDate) => {
 
     **CRITICAL INSTRUCTIONS:**
     1.  **DO NOT USE MARKDOWN.** No bolding (**), no italics (*), no code blocks (\`\`\`).
-    2.  Generate a concise, professional summary based on the tasks provided for ${displayDate}.
+    2.  Generate a concise, professional summary based on the tasks provided for ${displayDate} in (DD-MM-YYYY).
     3.  Start with a general title for the day's activities.
     4.  Use simple bullet points (e.g., a hyphen '-' or a bullet '•') for each major activity.
     5.  Incorporate key details from the task notes to make the summary informative.
