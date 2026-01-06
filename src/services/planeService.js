@@ -39,6 +39,10 @@ class PlaneService {
                 payload.priority = taskDetails.priority;
             }
 
+            if (taskDetails.cycleId) {
+                payload.cycle = taskDetails.cycleId;
+            }
+
             return await this.plane.workItems.create(this.workspaceId, this.projectId, payload);
         } catch (error) {
             console.error('Error creating task in Plane:', JSON.stringify(error, null, 2));

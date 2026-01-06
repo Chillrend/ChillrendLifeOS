@@ -29,10 +29,11 @@ module.exports = {
 
             const plane = new PlaneService(user.planeApiKey);
 
-            // 1. Fetch available states and labels from Plane
-            const [availableStates, availableLabels] = await Promise.all([
+            // 1. Fetch available states, labels and cycles from Plane
+            const [availableStates, availableLabels, availableCycles] = await Promise.all([
                 plane.getStates(),
                 plane.getLabels(),
+                plane.getCycles(),
             ]);
 
             if (!availableStates.length) {
@@ -52,6 +53,11 @@ module.exports = {
                 .map(labelName => availableLabels.find(l => l.name === labelName)?.id)
                 .filter(id => id); // Filter out any undefined IDs
 
+            // Find the active cycle
+            const now = new Date();
+            const activeCycle = availableCycles.find(c => new Date(c.start_date) <= now && new Date(c.end_date) >= now);
+
+
             // 4. Create the task in Plane
             const createdTask = await plane.createTask({
                 title: title,
@@ -59,6 +65,7 @@ module.exports = {
                 stateId: stateId,
                 priority: priority.toLowerCase(),
                 labelIds: labelIds,
+                cycleId: activeCycle ? activeCycle.id : null,
             });
 
             // 5. Respond to the user
@@ -71,7 +78,8 @@ module.exports = {
                     { name: 'State', value: state, inline: true },
                     { name: 'Priority', value: priority || 'None', inline: true },
                     { name: 'Labels', value: labels.join(', ') || 'None', inline: true },
-                    { name: 'Start Date', value: new Date().toISOString().split('T')[0], inline: true }
+                    { name: 'Start Date', value: new Date().toISOString().split('T')[0], inline: true },
+                    { name: 'Cycle', value: activeCycle ? activeCycle.name : 'None', inline: true }
                 )
                 .setColor(0x00FF00)
                 .setFooter({ text: `Task ID: ${createdTask.id}` });

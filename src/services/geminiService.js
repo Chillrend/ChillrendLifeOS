@@ -162,7 +162,7 @@ const createDailyLog = async (tasks, displayDate) => {
     6.  For 'In Progress' tasks, use phrases like "Continued work on..." or "Advanced the project by...".
     7.  For 'Done' tasks, state the accomplishment clearly.
 
-    **Data for ${displayDate}:**
+    **Data for ${displayDate} (In DD-MM-YYYY):**
     ${taskList || 'No tasks to report.'}
 
     **Generated Plain Text Log:**
