@@ -24,22 +24,38 @@ class PlaneService {
         }
     }
 
+    async getTask(taskId) {
+        try {
+            return await this.plane.workItems.retrieve(this.workspaceId, this.projectId, taskId);
+        } catch (error) {
+            console.error(`Error fetching task ${taskId} from Plane:`, error);
+            throw new Error('Could not fetch task from Plane.');
+        }
+    }
+
     async createTask(taskDetails) {
         try {
+            const { cycleId, ...restTaskDetails } = taskDetails;
             const payload = {
-                name: taskDetails.title,
-                description_html: marked(taskDetails.notes || ''),
-                state: taskDetails.stateId,
-                labels: taskDetails.labelIds,
+                name: restTaskDetails.title,
+                description_html: marked(restTaskDetails.notes || ''),
+                state: restTaskDetails.stateId,
+                labels: restTaskDetails.labelIds,
                 start_date: new Date().toISOString().split('T')[0],
                 assignees: ['68586bff-d00b-4e5a-9c4c-3b9b2a2f5091'],
             };
 
-            if (taskDetails.priority) {
-                payload.priority = taskDetails.priority;
+            if (restTaskDetails.priority) {
+                payload.priority = restTaskDetails.priority;
             }
 
-            return await this.plane.workItems.create(this.workspaceId, this.projectId, payload);
+            const createdTask = await this.plane.workItems.create(this.workspaceId, this.projectId, payload);
+
+            if (cycleId && createdTask.id) {
+                await this.addIssuesToCycle(cycleId, [createdTask.id]);
+            }
+
+            return createdTask;
         } catch (error) {
             console.error('Error creating task in Plane:', JSON.stringify(error, null, 2));
             throw new Error('Could not create task in Plane.');
@@ -80,7 +96,6 @@ class PlaneService {
 
     async addIssuesToCycle(cycleId, issueIds) {
         try {
-            // Replaced fetch with SDK call
             await this.plane.cycles.addWorkItemsToCycle(this.workspaceId, this.projectId, cycleId, issueIds);
         } catch (error) {
             console.error(`Error in addIssuesToCycle for ${cycleId}:`, error);
@@ -90,7 +105,6 @@ class PlaneService {
 
     async archiveCycle(cycleId) {
         try {
-            // Replaced fetch with SDK call
             await this.plane.cycles.archive(this.workspaceId, this.projectId, cycleId);
             return { success: true, cycleId };
         } catch (error) {
@@ -106,6 +120,19 @@ class PlaneService {
         } catch (error) {
             console.error(`Error fetching comments for issue ${issueId} from Plane:`, error);
             throw new Error(`Could not fetch comments for issue ${issueId}.`);
+        }
+    }
+
+    async addComment(issueId, commentText) {
+        try {
+            const payload = {
+                comment_html: commentText,
+                issue: issueId,
+            };
+            return await this.plane.workItems.comments.create(this.workspaceId, this.projectId, issueId, payload);
+        } catch (error) {
+            console.error(`Error adding comment to issue ${issueId} in Plane:`, JSON.stringify(error, null, 2));
+            throw new Error('Could not add comment to issue.');
         }
     }
 

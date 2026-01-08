@@ -44,6 +44,7 @@ module.exports = {
             const plane = new PlaneService(user.planeApiKey);
             const [tasks, states] = await Promise.all([plane.getTasks(), plane.getStates()]);
             const stateMap = new Map(states.map(s => [s.id, s.name]));
+            const inProgressStateId = states.find(s => s.name === 'In Progress')?.id;
 
             const relevantTasks = tasks.filter(t => {
                 const stateName = stateMap.get(t.state);
@@ -59,7 +60,21 @@ module.exports = {
                 return await interaction.editReply(`No relevant tasks found for ${displayDate}.`);
             }
 
-            const dailyLog = await createDailyLog(relevantTasks, displayDate);
+            // Fetch comments for in-progress tasks
+            const tasksWithData = await Promise.all(relevantTasks.map(async (task) => {
+                let comments = [];
+                if (task.state === inProgressStateId) {
+                    const fetchedComments = await plane.getComments(task.id);
+                    comments = fetchedComments.map(c => c.comment_html);
+                }
+                return { 
+                    ...task, 
+                    comments, 
+                    stateName: stateMap.get(task.state) 
+                };
+            }));
+
+            const dailyLog = await createDailyLog(tasksWithData, displayDate);
 
             const embed = new EmbedBuilder()
                 .setTitle(`✅ Daily Work Log for ${displayDate}`)

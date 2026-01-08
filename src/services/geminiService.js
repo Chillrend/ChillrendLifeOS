@@ -144,9 +144,11 @@ const refineTask = async (title, description) => {
  */
 const createDailyLog = async (tasks, displayDate) => {
     const taskList = tasks.map(t => {
-        // Strip HTML tags from the description to get plain text
         const notes = t.description_html ? t.description_html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() : 'No details provided.';
-        return `Task: ${t.name} (Status: ${t.state.name})\nDetails: ${notes}`;
+        const comments = t.comments && t.comments.length > 0
+            ? `Comments:\n${t.comments.map(c => `- ${c.replace(/<[^>]*>/g, ' ')}`).join('\n')}`
+            : '';
+        return `Task: ${t.name} (Status: ${t.stateName})\nDetails: ${notes}\n${comments}`;
     }).join('\n\n');
 
     const prompt = `
@@ -158,8 +160,8 @@ const createDailyLog = async (tasks, displayDate) => {
     2.  Generate a concise, professional summary based on the tasks provided for ${displayDate} in (DD-MM-YYYY).
     3.  Start with a general title for the day's activities.
     4.  Use simple bullet points (e.g., a hyphen '-' or a bullet '•') for each major activity.
-    5.  Incorporate key details from the task notes to make the summary informative.
-    6.  For 'In Progress' tasks, use phrases like "Continued work on..." or "Advanced the project by...".
+    5.  Incorporate key details from the task notes and **comments** to make the summary informative and reflect the latest progress.
+    6.  For 'In Progress' tasks, use the comments to describe the work done. Use phrases like "Continued work on..." or "Advanced the project by...".
     7.  For 'Done' tasks, state the accomplishment clearly.
 
     **Data for ${displayDate} (In DD-MM-YYYY):**
