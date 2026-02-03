@@ -63,7 +63,9 @@ module.exports = {
 
             const embed = new EmbedBuilder()
                 .setTitle('↔️ Transfer Logged')
-                .setDescription(parsedDetails.description)
+                .setDescription(parsedDetails.description && parsedDetails.description.trim() !== ''
+                    ? parsedDetails.description
+                    : 'No description provided')
                 .addFields(
                     { name: 'Amount', value: actualService.formatToIDR(Math.abs(parsedDetails.amount)), inline: true },
                     { name: 'From', value: parsedDetails.source_account, inline: true },
