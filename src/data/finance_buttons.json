@@ -1,0 +1,56 @@
+[
+  {
+    "custom_id": "fin_gojek",
+    "label": "Gojek Ride to St. Cibinong",
+    "category": "Transportation",
+    "type": "Expense",
+    "account": "GoPay Wallet",
+    "style": "Primary",
+    "amount": 15000
+  },
+  {
+    "custom_id": "fin_gojek_campus",
+    "label": "Gojek Ride Inside Campus",
+    "category": "Transportation",
+    "type": "Expense",
+    "account": "GoPay Wallet",
+    "style": "Primary",
+    "amount": 9000
+  },
+  {
+    "custom_id": "fin_ojek",
+    "label": "Ojek Ride Home",
+    "category": "Transportation",
+    "type": "Expense",
+    "account": "GoPay Wallet",
+    "style": "Primary",
+    "amount": 20000
+  },
+  {
+    "custom_id": "fin_krl",
+    "label": "Top Up KRL Prepaid Card",
+    "category": "Transportation",
+    "type": "Expense",
+    "account": "Mandiri Payroll Account",
+    "style": "Primary",
+    "amount": 100000
+  },
+  {
+    "custom_id": "fin_gopay_topup",
+    "label": "Top Up Gojek Wallet",
+    "type": "Transfer",
+    "accountFrom": "Mandiri Payroll Account",
+    "accountTo": "GoPay Wallet",
+    "style": "Primary",
+    "amount": 200000
+  },
+  {
+    "custom_id": "fin_cash_wd",
+    "label": "Cash Withdraw",
+    "type": "Transfer",
+    "accountFrom": "Mandiri Payroll Account",
+    "accountTo": "Cash Wallet",
+    "style": "Primary",
+    "amount": 200000
+  }
+]
