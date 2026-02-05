@@ -1,7 +1,7 @@
 require('dotenv').config();
 const fs = require('node:fs');
 const path = require('node:path');
-const { Client, Collection, GatewayIntentBits, InteractionType } = require('discord.js');
+const { Client, Collection, GatewayIntentBits, InteractionType, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const mongoose = require('mongoose');
 const express = require('express');
 const User = require('./models/User');
@@ -51,38 +51,37 @@ client.on('interactionCreate', async interaction => {
     // Security Check
     if (!isOwner(interaction)) {
         if (interaction.isRepliable()) {
-            return interaction.reply({ content: '⛔ Sorry, this bot is private. Access denied.', ephemeral: true });
+            return interaction.reply({ content: '⛔ Private bot. Access denied.', ephemeral: true });
         }
         return;
     }
 
-    let commandName = interaction.commandName;
-    if (isDev && commandName.startsWith('dev-')) {
-        commandName = commandName.slice(4);
-    }
-    const command = client.commands.get(commandName);
+    // 1. Handle Slash Commands & Autocomplete (Your existing logic)
+    if (interaction.isChatInputCommand() || interaction.isAutocomplete()) {
+        let commandName = interaction.commandName;
+        if (isDev && commandName.startsWith('dev-')) commandName = commandName.slice(4);
 
-    if (!command) {
-        console.error(`No command matching ${interaction.commandName} was found.`);
-        return;
-    }
+        const command = client.commands.get(commandName);
+        if (!command) return;
 
-    if (interaction.isAutocomplete()) {
         try {
-            await command.autocomplete(interaction);
-        } catch (error) {
-            console.error('Autocomplete Error:', error);
-        }
-    } else if (interaction.isChatInputCommand()) {
-        try {
-            await command.execute(interaction);
+            if (interaction.isAutocomplete()) await command.autocomplete(interaction);
+            else await command.execute(interaction);
         } catch (error) {
             console.error(error);
-            if (interaction.replied || interaction.deferred) {
-                await interaction.followUp({ content: 'There was an error executing this command!', ephemeral: true });
-            } else {
-                await interaction.reply({ content: 'There was an error executing this command!', ephemeral: true });
-            }
+            const msg = { content: 'Error executing command!', ephemeral: true };
+            interaction.replied || interaction.deferred ? await interaction.followUp(msg) : await interaction.reply(msg);
+        }
+    }
+
+    if (interaction.isButton() || interaction.isStringSelectMenu()) {
+        const command =client.commands.get('quick-action');
+        if (!command) return;
+
+        try {
+            await command.handleComponent(interaction);
+        } catch (error) {
+            console.error('Component Error:', error);
         }
     }
 });
