@@ -32,20 +32,36 @@ module.exports = {
     async handleComponent(interaction) {
         if (interaction.isStringSelectMenu() && interaction.customId === 'dashboard_selector') {
             const selection = interaction.values[0];
-            const buttonRow = new ActionRowBuilder();
+            const components = [interaction.message.components[0]]; // Keep the original select menu
 
             if (selection === 'mode_finance') {
                 const financeButtons = JSON.parse(fs.readFileSync(financeButtonsPath, 'utf-8'));
-                financeButtons.forEach(buttonInfo => {
-                    buttonRow.addComponents(
-                        new ButtonBuilder()
-                            .setCustomId(buttonInfo.custom_id)
-                            .setLabel(buttonInfo.label)
-                            .setStyle(ButtonStyle[buttonInfo.style])
-                    );
-                });
+                if (financeButtons.length > 0) {
+                    const buttonRows = [];
+                    let currentRow = new ActionRowBuilder();
+                    buttonRows.push(currentRow);
+
+                    financeButtons.forEach(buttonInfo => {
+                        // If the current row is full (5 buttons), create a new one
+                        if (currentRow.components.length === 5) {
+                            currentRow = new ActionRowBuilder();
+                            buttonRows.push(currentRow);
+                        }
+                        currentRow.addComponents(
+                            new ButtonBuilder()
+                                .setCustomId(buttonInfo.custom_id)
+                                .setLabel(`${buttonInfo.label} (${actualService.formatToIDR(buttonInfo.amount)})`)
+                                .setStyle(ButtonStyle[buttonInfo.style])
+                        );
+                    });
+                    components.push(...buttonRows);
+                }
+            } else if (selection === 'mode_task') {
+                // Placeholder for task buttons. Currently, this will result in no button rows being added,
+                // effectively clearing the finance buttons, which is the desired behavior.
             }
-            await interaction.update({ components: [interaction.message.components[0], buttonRow] });
+
+            await interaction.update({ components });
         }
 
         if (interaction.isButton()) {
@@ -65,6 +81,7 @@ module.exports = {
 
                 if (type === 'Expense') {
                     const { account: accountName, category: categoryName } = buttonInfo;
+
                     const accounts = await actualService.getAccounts();
                     const categories = await actualService.getCategories();
 

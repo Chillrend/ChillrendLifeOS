@@ -1,7 +1,7 @@
 require('dotenv').config();
 const fs = require('node:fs');
 const path = require('node:path');
-const { Client, Collection, GatewayIntentBits, InteractionType, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { Client, Collection, GatewayIntentBits } = require('discord.js');
 const mongoose = require('mongoose');
 const express = require('express');
 const User = require('./models/User');
@@ -9,8 +9,7 @@ const User = require('./models/User');
 // --- Configuration ---
 const PORT = 3000;
 const app = express();
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-
+const client = new Client({intents: [GatewayIntentBits.Guilds]})
 // Check for development environment
 const isDev = process.env.NODE_ENV === 'development';
 
