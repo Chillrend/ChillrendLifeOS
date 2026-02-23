@@ -22,7 +22,7 @@
     "label": "Ojek Ride Home",
     "category": "Transportation",
     "type": "Expense",
-    "account": "GoPay Wallet",
+    "account": "Cash Wallet",
     "style": "Primary",
     "amount": 20000
   },
