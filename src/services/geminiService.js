@@ -1,44 +1,14 @@
 const { GoogleGenAI } = require('@google/genai');
 const { z } = require('zod');
 const { zodToJsonSchema } = require('zod-to-json-schema');
+const { generateAndValidateJsonWithRetry } = require('../utils/jsonParser');
 
 // Initialize the new client
 const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-/**
- * A helper function to call the Gemini model with a JSON schema.
- * @param {string} prompt - The prompt to send to the model.
- * @param {object} jsonSchema - The JSON schema for the response.
- * @param {z.ZodSchema} zodSchema - The Zod schema for validation.
- * @param {string} functionName - The name of the calling function for error logging.
- * @returns {Promise<object|null>} The validated JSON response from the model or null on failure.
- */
-const generateAndValidateJson = async (prompt, jsonSchema, zodSchema, functionName) => {
-    try {
-        const result = await genAI.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-                responseMimeType: 'application/json',
-                responseJsonSchema: jsonSchema,
-            },
-        });
-
-        // In the new SDK, 'text' is a property, not a function
-        const rawText = result.text;
-
-        console.log("Raw Response: ", rawText);
-
-        const responseJson = JSON.parse(rawText);
-
-        return zodSchema.parse(responseJson);
-    } catch (error) {
-        const errorMessage = error instanceof z.ZodError ? `Zod validation error` : `Gemini API error`;
-        console.error(`[${functionName}] ${errorMessage}:`, error.message);
-        if (error instanceof z.ZodError) console.error("Failed JSON:", error.message);
-        return null;
-    }
-};
+// Get models from environment
+const PARSER_MODEL = process.env.GEMINI_PARSER_MODEL || 'gemini-2.5-flash';
+const GENERAL_MODEL = process.env.GEMINI_GENERAL_MODEL || 'gemini-2.5-flash';
 
 /**
  * Infers a date from a natural language string.
@@ -48,7 +18,7 @@ const generateAndValidateJson = async (prompt, jsonSchema, zodSchema, functionNa
 const inferDate = async (text) => {
     const dateZodSchema = z.object({
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe("The inferred date in 'YYYY-MM-DD' format."),
-    }).strict();
+    });
 
     const prompt = `
     You are a date parsing API. Your only function is to determine the exact date in YYYY-MM-DD format from a user's natural language input.
@@ -61,80 +31,67 @@ const inferDate = async (text) => {
     **USER INPUT:** "${text}"
     `;
 
-    const result = await generateAndValidateJson(
-        prompt,
-        zodToJsonSchema(dateZodSchema),
-        dateZodSchema,
-        'inferDate'
-    );
-
-    return result ? result.date : null;
+    try {
+        const result = await generateAndValidateJsonWithRetry(
+            genAI,
+            PARSER_MODEL,
+            prompt,
+            zodToJsonSchema(dateZodSchema),
+            dateZodSchema
+        );
+        return result ? result.date : null;
+    } catch (error) {
+        console.error('[inferDate] Error:', error.message);
+        return null;
+    }
 };
-
 
 /**
  * Refines a task's title and description and determines its properties.
  */
 const refineTask = async (title, description) => {
-    const states = ['Todo', 'In Progress', 'Paused', 'Done', 'Canceled'];
-    const priorities = ['Urgent', 'High', 'Medium', 'Low'];
-    const labels = ['Ideas', 'Incident', 'Ops', 'Development', 'Networking'];
+    const priorities = ['urgent', 'high', 'medium', 'low'];
 
     const taskRefinementZodSchema = z.object({
-        title: z.string().describe('A clear, concise, and action-oriented title for the task.'),
+        title: z.string().describe('A clear, concise, and action-oriented title for the task. Use exactly the key "title", do not use synonyms like "refinedTitle".'),
         notes: z.string().describe('A well-structured breakdown of the task. Use markdown for clarity (e.g., bullet points, sub-tasks).'),
-        state: z.enum(states).describe('The current state of the task. Default to "Todo" unless specified otherwise.'),
-        priority: z.enum(priorities).optional().describe('The priority level of the task. Infer from the user\'s language (e.g., "now" -> "urgent"). Omit if no priority is mentioned.'),
-        labels: z.array(z.enum(labels)).describe('A list of relevant labels. Infer from the task content.'),
-    }).strict();
+        priority: z.enum(priorities).optional().describe('The priority level of the task. Infer from the user\'s language. Must be all lowercase: "urgent", "high", "medium", or "low".'),
+        tags: z.array(z.string()).describe('A list of tags or keywords that fit this task. (e.g., "Ideas", "Incident", "Ops", "Development", "Networking"). Infer from content.'),
+    });
 
     const prompt = `
     You are a productivity expert API. Your job is to analyze a user's task, refine it, and categorize it.
 
     **CRITICAL INSTRUCTIONS:**
-    1.  **Refine Title:** Create a new title that is clear, concise, and action-oriented.
+    1.  **Refine Title:** Create a new title that is clear, concise, and action-oriented. You MUST output this exactly under the key "title". Do NOT use "refinedTitle" or any other synonyms.
     2.  **Structure notes:** Break down the description into structured markdown notes.
-    3.  **Determine State:** Choose the most appropriate state. Default to "Todo".
-    4.  **Determine Priority:** Infer the priority from the user's language. If no priority is implied, set to 'low'.
-    5.  **Determine Labels:** Select relevant labels that categorize the task.
-    7.  **IMPORTANT** Adhere strictly to these JSON schema and the available options.
-    {
-        title: string,
-        notes: string,
-        state: enum('Todo', 'In Progress', 'Paused', 'Done', 'Canceled'),
-        priority: enum('Urgent', 'High', 'Medium', 'Low'),
-        labels: string[enum('Ideas', 'Incident', 'Ops', 'Development', 'Networking')],
-    }
-
-    **Available Options:**
-    - **States:** ${states.join(', ')}
-    - **Priorities:** ${priorities.join(', ')}
-    - **Labels:** ${labels.join(', ')}
+    3.  **Determine Priority:** Infer the priority from the user's language. Use exactly one of the lowercase values: "urgent", "high", "medium", or "low".
+    4.  **Determine Tags:** Select relevant tags that categorize the task (e.g., "Ideas", "Incident", "Ops", "Development", "Networking").
+    5.  **Schema Match:** Adhere strictly to the JSON schema provided.
 
     **USER'S TASK:**
     - **Title:** "${title}"
     - **Description:** "${description}"
     `;
 
-    const result = await generateAndValidateJson(
-        prompt,
-        zodToJsonSchema(taskRefinementZodSchema, { target: 'openApi3' }),
-        taskRefinementZodSchema,
-        'refineTask'
-    );
-
-    if (!result) {
+    try {
+        return await generateAndValidateJsonWithRetry(
+            genAI,
+            PARSER_MODEL,
+            prompt,
+            zodToJsonSchema(taskRefinementZodSchema, { target: 'openApi3' }),
+            taskRefinementZodSchema
+        );
+    } catch (error) {
+        console.error('[refineTask] Error:', error.message);
         return {
             title: title,
             notes: description,
-            state: 'Todo',
-            labels: [],
+            priority: 'low',
+            tags: [],
         };
     }
-
-    return result;
 };
-
 
 /**
  * Generates a formatted daily work log for a timesheet.
@@ -144,11 +101,9 @@ const refineTask = async (title, description) => {
  */
 const createDailyLog = async (tasks, displayDate) => {
     const taskList = tasks.map(t => {
-        const notes = t.description_html ? t.description_html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() : 'No details provided.';
-        const comments = t.comments && t.comments.length > 0
-            ? `Comments:\n${t.comments.map(c => `- ${c.replace(/<[^>]*>/g, ' ')}`).join('\n')}`
-            : '';
-        return `Task: ${t.name} (Status: ${t.stateName})\nDetails: ${notes}\n${comments}`;
+        // Strip markdown/html from notes if present
+        const notes = t.description ? t.description.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() : 'No details provided.';
+        return `Task: ${t.title} (Status: ${t.statusName || 'Unknown'})\nDetails: ${notes}`;
     }).join('\n\n');
 
     const prompt = `
@@ -160,9 +115,9 @@ const createDailyLog = async (tasks, displayDate) => {
     2.  Generate a concise, professional summary based on the tasks provided for ${displayDate} in (DD-MM-YYYY).
     3.  Start with a general title for the day's activities.
     4.  Use simple bullet points (e.g., a hyphen '-' or a bullet '•') for each major activity.
-    5.  Incorporate key details from the task notes and **comments** to make the summary informative and reflect the latest progress.
-    6.  For 'In Progress' tasks, use the comments to describe the work done. Use phrases like "Continued work on..." or "Advanced the project by...".
-    7.  For 'Done' tasks, state the accomplishment clearly.
+    5.  Incorporate key details from the task notes to make the summary informative and reflect the latest progress.
+    6.  For tasks in progress, describe the work being done. Use phrases like "Continued work on..." or "Advanced the project by...".
+    7.  For done tasks, state the accomplishment clearly.
 
     **Data for ${displayDate} (In DD-MM-YYYY):**
     ${taskList || 'No tasks to report.'}
@@ -172,7 +127,7 @@ const createDailyLog = async (tasks, displayDate) => {
 
     try {
         const result = await genAI.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: GENERAL_MODEL,
             contents: prompt,
         });
 
@@ -188,7 +143,6 @@ const createDailyLog = async (tasks, displayDate) => {
     }
 };
 
-
 /**
  * Extracts expense or income details from a text input.
  */
@@ -200,7 +154,7 @@ const processTransaction = async (text, type, accountNames, categoryNames) => {
         account: z.enum(accountNames).describe('The account used for the transaction. MUST be one of the available accounts.'),
         payee_name: z.string().optional().describe('The person or business involved (e.g., store for an expense). If not present, this can be omitted.'),
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe("The date in 'YYYY-MM-DD' format. Default to today if not specified."),
-    }).strict();
+    });
 
     const prompt = `
 You are a highly precise financial assistant API. Your ONLY function is to extract details from a user's input and format it into a JSON object.
@@ -221,11 +175,12 @@ You are a highly precise financial assistant API. Your ONLY function is to extra
 **USER INPUT:** "${text}"
 `;
 
-    return generateAndValidateJson(
+    return generateAndValidateJsonWithRetry(
+        genAI,
+        PARSER_MODEL,
         prompt,
         zodToJsonSchema(transactionZodSchema, {target: 'openApi3'}),
-        transactionZodSchema,
-        'processTransaction'
+        transactionZodSchema
     );
 };
 
@@ -239,7 +194,7 @@ const processTransfer = async (text, accountNames) => {
     source_account: z.enum(accountNames).describe('The account the money is being moved FROM. This MUST be one of the available accounts.'),
     destination_account: z.enum(accountNames).describe('The account the money is being moved TO. This MUST be one of the available accounts.'),
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe("The date of the transfer in 'YYYY-MM-DD' format. Default to today if not specified."),
-  }).strict();
+  });
 
   const prompt = `
 You are a highly precise financial assistant API. Your ONLY function is to extract details about a transfer between accounts and format it into a JSON object.
@@ -258,7 +213,13 @@ You are a highly precise financial assistant API. Your ONLY function is to extra
 
 **USER INPUT:** "${text}"`;
 
-  return generateAndValidateJson(prompt, zodToJsonSchema(transferZodSchema), transferZodSchema, 'processTransfer');
+  return generateAndValidateJsonWithRetry(
+    genAI,
+    PARSER_MODEL,
+    prompt,
+    zodToJsonSchema(transferZodSchema),
+    transferZodSchema
+  );
 };
 
 /**
@@ -268,7 +229,7 @@ const processBalanceQuery = async (text, accountNames, categoryNames) => {
   const balanceQueryZodSchema = z.object({
     query_type: z.enum(['account', 'category', 'summary']).describe("The user's intent. 'account' for a specific account's balance, 'category' for spending in a category, or 'summary' for an overview of all accounts."),
     name: z.string().optional().describe("The specific name of the account or category being asked about. Can be 'all' for a summary."),
-  }).strict();
+  });
 
   const prompt = `
 You are a highly precise financial query API. Your ONLY function is to analyze the user's message and extract query details into a structured JSON object.
@@ -289,11 +250,12 @@ You are a highly precise financial query API. Your ONLY function is to analyze t
 
 **USER INPUT:** "${text}"`;
 
-  return generateAndValidateJson(
+  return generateAndValidateJsonWithRetry(
+    genAI,
+    PARSER_MODEL,
     prompt,
     zodToJsonSchema(balanceQueryZodSchema),
-    balanceQueryZodSchema,
-    'processBalanceQuery'
+    balanceQueryZodSchema
   );
 };
 

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modify Transaction - LifeOS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex items-center justify-center p-4">
+    <div class="bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-lg border border-gray-700">
+        <h1 class="text-2xl font-bold text-center text-emerald-400 mb-6 flex items-center justify-center gap-2">
+            <span>📝</span> Modify Transaction
+        </h1>
+
+        <form action="/finance/modify" method="POST" class="space-y-4">
+            <input type="hidden" name="id" value="<%= transaction.id %>">
+            <input type="hidden" name="token" value="<%= token %>">
+
+            <!-- Transaction Type -->
+            <div>
+                <label class="block text-sm font-semibold mb-1 text-gray-300">Transaction Type</label>
+                <select name="type" id="type-select" onchange="toggleTransferFields()" class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    <option value="expense" <%= type === 'expense' ? 'selected' : '' %>>Expense</option>
+                    <option value="income" <%= type === 'income' ? 'selected' : '' %>>Income</option>
+                    <option value="transfer" <%= type === 'transfer' ? 'selected' : '' %>>Transfer</option>
+                </select>
+            </div>
+
+            <!-- Date -->
+            <div>
+                <label class="block text-sm font-semibold mb-1 text-gray-300">Date</label>
+                <input type="date" name="date" value="<%= transaction.payload.date %>" required class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+            </div>
+
+            <!-- Amount -->
+            <div>
+                <label class="block text-sm font-semibold mb-1 text-gray-300">Amount (IDR)</label>
+                <input type="number" name="amount" value="<%= transaction.payload.amount %>" step="any" required class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+            </div>
+
+            <!-- Payee Name -->
+            <div id="payee-group">
+                <label class="block text-sm font-semibold mb-1 text-gray-300">Payee Name</label>
+                <input type="text" name="payee_name" value="<%= transaction.payload.payee_name || '' %>" class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+            </div>
+
+            <!-- Source Account / Account -->
+            <div>
+                <label id="account-label" class="block text-sm font-semibold mb-1 text-gray-300">Account</label>
+                <select name="account" class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    <% accounts.forEach(acc => { %>
+                        <option value="<%= acc.name %>" <%= transaction.payload.account === acc.name || transaction.payload.source_account === acc.name ? 'selected' : '' %>><%= acc.name %></option>
+                    <% }) %>
+                </select>
+            </div>
+
+            <!-- Destination Account (For Transfer) -->
+            <div id="transfer-destination-group" class="hidden">
+                <label class="block text-sm font-semibold mb-1 text-gray-300">Destination Account</label>
+                <select name="destination_account" class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    <% accounts.forEach(acc => { %>
+                        <option value="<%= acc.name %>" <%= transaction.payload.destination_account === acc.name ? 'selected' : '' %>><%= acc.name %></option>
+                    <% }) %>
+                </select>
+            </div>
+
+            <!-- Category (For non-transfer) -->
+            <div id="category-group">
+                <label class="block text-sm font-semibold mb-1 text-gray-300">Category</label>
+                <select name="category" class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    <% categories.forEach(cat => { %>
+                        <option value="<%= cat.name %>" <%= transaction.payload.category === cat.name ? 'selected' : '' %>><%= cat.name %></option>
+                    <% }) %>
+                </select>
+            </div>
+
+            <!-- Description -->
+            <div>
+                <label class="block text-sm font-semibold mb-1 text-gray-300">Description / Notes</label>
+                <textarea name="description" rows="2" class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"><%= transaction.payload.description || '' %></textarea>
+            </div>
+
+            <!-- Buttons -->
+            <div class="flex gap-3 pt-4">
+                <button type="button" onclick="window.close()" class="w-1/2 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 rounded transition duration-200">
+                    Cancel
+                </button>
+                <button type="submit" class="w-1/2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-2 rounded transition duration-200">
+                    Save Changes
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        function toggleTransferFields() {
+            const select = document.getElementById('type-select');
+            const type = select.value;
+
+            const payeeGroup = document.getElementById('payee-group');
+            const transferDestGroup = document.getElementById('transfer-destination-group');
+            const categoryGroup = document.getElementById('category-group');
+            const accountLabel = document.getElementById('account-label');
+
+            if (type === 'transfer') {
+                payeeGroup.classList.add('hidden');
+                categoryGroup.classList.add('hidden');
+                transferDestGroup.classList.remove('hidden');
+                accountLabel.textContent = 'Source Account';
+            } else {
+                payeeGroup.classList.remove('hidden');
+                categoryGroup.classList.remove('hidden');
+                transferDestGroup.classList.add('hidden');
+                accountLabel.textContent = 'Account';
+            }
+        }
+
+        // Initialize state on load
+        toggleTransferFields();
+    </script>
+</body>
+</html>

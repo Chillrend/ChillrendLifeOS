@@ -1,11 +1,10 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const User = require('../../models/User');
-const PlaneService = require('../../services/planeService');
+const VikunjaService = require('../../services/vikunjaService');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('comment')
-        .setDescription('Adds a comment to a task.')
+        .setDescription('Adds a comment to a Vikunja task.')
         .addStringOption(option =>
             option.setName('task')
                 .setDescription('The task to comment on.')
@@ -18,50 +17,46 @@ module.exports = {
     async autocomplete(interaction) {
         const focusedOption = interaction.options.getFocused(true);
         if (focusedOption.name === 'task') {
-            const user = await User.findOne({ discordId: interaction.user.id });
-            if (!user || !user.planeApiKey) {
-                return;
+            try {
+                const vikunja = new VikunjaService();
+                const tasks = await vikunja.getTasks();
+                const activeTasks = tasks.filter(t => !t.done);
+
+                const query = focusedOption.value.toLowerCase();
+                const filtered = activeTasks
+                    .filter(t => t.title.toLowerCase().includes(query))
+                    .slice(0, 25);
+
+                await interaction.respond(
+                    filtered.map(task => ({ name: `[#${task.id}] ${task.title.slice(0, 80)}`, value: String(task.id) })),
+                );
+            } catch (err) {
+                console.error('Autocomplete task error:', err);
+                await interaction.respond([]);
             }
-
-            const plane = new PlaneService(user.planeApiKey);
-            const [tasks, states] = await Promise.all([
-                plane.getTasks(),
-                plane.getStates()
-            ]);
-            const doneStateId = states.find(s => s.name === 'Done')?.id;
-            const activeTasks = tasks.filter(t => t.state !== doneStateId);
-
-            await interaction.respond(
-                activeTasks.map(task => ({ name: `[CHL-${task.sequence_id}] ${task.name}`, value: task.id })),
-            );
         }
     },
     async execute(interaction) {
         await interaction.deferReply({ ephemeral: true });
 
         try {
-            const user = await User.findOne({ discordId: interaction.user.id });
-            if (!user || !user.planeApiKey) {
-                return interaction.editReply('You need to link your Plane API key first! Use the `/link` command.');
-            }
-
             const taskId = interaction.options.getString('task');
             const commentText = interaction.options.getString('comment');
 
-            const plane = new PlaneService(user.planeApiKey);
+            const vikunja = new VikunjaService();
             
             // Fetch the task first to get its name
-            const task = await plane.getTask(taskId);
+            const task = await vikunja.getTask(taskId);
             if (!task) {
                 return interaction.editReply('Could not find the specified task.');
             }
 
-            const comment = await plane.addComment(taskId, commentText);
+            await vikunja.addComment(taskId, commentText);
 
             const embed = new EmbedBuilder()
                 .setTitle('💬 Comment Added')
-                .setDescription(`Successfully added a comment to task **${task.name}**.`)
-                .addFields({ name: 'Comment', value: comment.comment_html })
+                .setDescription(`Successfully added a comment to task **${task.title}**.`)
+                .addFields({ name: 'Comment', value: commentText })
                 .setColor(0x0099FF)
                 .setTimestamp();
 

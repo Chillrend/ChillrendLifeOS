@@ -1,34 +1,25 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const User = require('../../models/User');
-const PlaneService = require('../../services/planeService');
+const VikunjaService = require('../../services/vikunjaService');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('backlog')
-        .setDescription('View your active tasks from Plane (Todo & In Progress)'),
+        .setDescription('View your active tasks from Vikunja (Todo/Backlog & In Progress)'),
     async execute(interaction) {
         await interaction.deferReply();
 
         try {
-            const user = await User.findOne({ discordId: interaction.user.id });
+            const vikunja = new VikunjaService();
 
-            if (!user || !user.planeApiKey) {
-                return interaction.editReply('You need to link your Plane API key first! Use the `/link` command.');
-            }
+            // Fetch tasks for the project
+            const tasks = await vikunja.getTasks();
 
-            const plane = new PlaneService(user.planeApiKey);
-            // 1. Fetch all tasks and all states
-            const [tasks, states] = await Promise.all([
-                plane.getTasks(), // Fetch all tasks without filters
-                plane.getStates()
-            ]);
+            const backlogBucketId = parseInt(process.env.VIKUNJA_BUCKET_BACKLOG_ID, 10);
+            const inProgressBucketId = parseInt(process.env.VIKUNJA_BUCKET_INPROGRESS_ID, 10);
 
-            // 2. Create a map for quick state lookup
-            const stateMap = new Map(states.map(s => [s.id, s.name]));
-
-            // 3. Filter tasks manually
-            const todoTasks = tasks.filter(t => stateMap.get(t.state) === 'Todo');
-            const inProgressTasks = tasks.filter(t => stateMap.get(t.state) === 'In Progress');
+            // Filter tasks by bucket (treat bucket_id: 0 / unassigned as Backlog/Todo as per Vikunja's UI default)
+            const todoTasks = tasks.filter(t => (t.bucket_id === backlogBucketId || t.bucket_id === 0 || !t.bucket_id) && !t.done);
+            const inProgressTasks = tasks.filter(t => t.bucket_id === inProgressBucketId && !t.done);
 
             if (todoTasks.length === 0 && inProgressTasks.length === 0) {
                 return await interaction.editReply('🎉 No active tasks in your backlog!');
@@ -41,7 +32,7 @@ module.exports = {
             if (inProgressTasks.length > 0) {
                 const listStr = inProgressTasks
                     .slice(0, 15)
-                    .map(t => `• \`#CHL-${t.sequence_id}\` ${t.name}`)
+                    .map(t => `• \`#${t.id}\` ${t.title}`)
                     .join('\n');
                 embed.addFields({ name: `🚀 In Progress (${inProgressTasks.length})`, value: listStr });
             }
@@ -49,9 +40,9 @@ module.exports = {
             if (todoTasks.length > 0) {
                 const listStr = todoTasks
                     .slice(0, 15)
-                    .map(t => `• \`#CHL-${t.sequence_id}\` ${t.name}`)
+                    .map(t => `• \`#${t.id}\` ${t.title}`)
                     .join('\n');
-                embed.addFields({ name: `📥 Todo (${todoTasks.length})`, value: listStr });
+                embed.addFields({ name: `📥 Todo / Backlog (${todoTasks.length})`, value: listStr });
             }
 
             await interaction.editReply({ embeds: [embed] });

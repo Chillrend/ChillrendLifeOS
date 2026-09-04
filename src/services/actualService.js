@@ -287,6 +287,100 @@ const shutdown = async () => {
   }
 };
 
+/**
+ * Resolves an account from payload (using ID or name) and validates its existence in Actual.
+ */
+const resolveAccount = (accounts, id, name) => {
+  if (id) {
+    const acc = accounts.find(a => a.id === id);
+    if (acc) return acc;
+  }
+  if (name) {
+    const acc = accounts.find(a => a.name.toLowerCase() === name.toLowerCase());
+    if (acc) return acc;
+  }
+  throw new Error(`Account not found (ID: ${id || 'N/A'}, Name: "${name || 'N/A'}")`);
+};
+
+/**
+ * Resolves a category from payload (using ID or name) and validates its existence in Actual.
+ */
+const resolveCategory = (categories, id, name) => {
+  if (id) {
+    const cat = categories.find(c => c.id === id);
+    if (cat) return cat;
+  }
+  if (name) {
+    const cat = categories.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (cat) return cat;
+  }
+  throw new Error(`Category not found (ID: ${id || 'N/A'}, Name: "${name || 'N/A'}")`);
+};
+
+/**
+ * Takes a flexible transaction payload (either IDs or names) and posts it to Actual Budget.
+ * Works for expenses, incomes, and transfers!
+ */
+const createActualTransaction = async (payload) => {
+  if (!isInitialized) {
+    await init();
+  }
+
+  const accounts = await getAccounts();
+  const type = payload.type || 'expense';
+
+  if (type === 'transfer') {
+    const srcAcc = resolveAccount(accounts, payload.source_account_id, payload.source_account || payload.account);
+    const destAcc = resolveAccount(accounts, payload.destination_account_id, payload.destination_account);
+
+    const payees = await getPayees();
+    // Locate the transfer payee of the destination account
+    const transferPayee = payees.find(p => p.transfer_acct === destAcc.id);
+    if (!transferPayee) {
+      throw new Error(`Internal transfer payee for account "${destAcc.name}" (ID: ${destAcc.id}) not found.`);
+    }
+
+    const amountInCents = api.utils.amountToInteger(-Math.abs(payload.amount));
+
+    const transaction = {
+      date: payload.date || new Date().toISOString().split('T')[0],
+      amount: amountInCents,
+      payee: transferPayee.id,
+      notes: payload.description || 'Transfer'
+    };
+
+    return await addTransactions(srcAcc.id, [transaction], true);
+
+  } else {
+    const targetAcc = resolveAccount(accounts, payload.account_id, payload.account);
+    
+    // Categories are retrieved
+    const categories = await getCategories();
+    const targetCat = resolveCategory(categories, payload.category_id, payload.category);
+
+    // Convert amount: positive for income, negative for expense
+    const finalAmount = type === 'expense' ? -Math.abs(payload.amount) : Math.abs(payload.amount);
+    const amountInCents = api.utils.amountToInteger(finalAmount);
+
+    const transaction = {
+      date: payload.date || new Date().toISOString().split('T')[0],
+      amount: amountInCents,
+      notes: payload.description || '',
+      category: targetCat.id,
+      cleared: false
+    };
+
+    // If payee_id is provided, use it directly! Otherwise, use payee_name as string.
+    if (payload.payee_id) {
+      transaction.payee = payload.payee_id;
+    } else if (payload.payee_name) {
+      transaction.payee_name = payload.payee_name;
+    }
+
+    return await addTransactions(targetAcc.id, [transaction]);
+  }
+};
+
 module.exports = {
   init,
   addTransactions,
@@ -300,4 +394,5 @@ module.exports = {
   shutdown,
   utils: api.utils, // Exposing utils is helpful (e.g., for amountToInteger)
   formatToIDR,
+  createActualTransaction,
 };
