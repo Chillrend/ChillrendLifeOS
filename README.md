@@ -36,14 +36,83 @@ Runs timezone-aware schedules natively inside your Docker container:
 
 ### 📡 Finance Webhook & Web-UI
 Integrate external services (like n8n, iOS Shortcuts, or web scrapers) with automated decision-making:
-1.  **Webhook Endpoint (`POST /webhook/finance`):** Accepts structured JSON. Supports explicit UUIDs (`account_id`, `category_id`, `payee_id`) for direct machine integration, with case-insensitive fallback to names.
-2.  **Interactive Discord DM:** Posts a pending approval embed with **[ Accept ]**, **[ Deny ]**, and **[ Modify ]** buttons.
-    *   *Accept:* Logs the transaction immediately.
-    *   *Deny:* Rejects and logs internally inside SQLite.
-3.  **Secure Web-UI Modification:** Clicking *Modify* generates a cryptographically secure HMAC-validated URL. 
+
+#### 🔒 Webhook Security
+To prevent unauthorized requests, the webhook endpoint is protected by a **Bearer Token** authentication mechanism.
+When sending requests to the webhook, you **MUST** include the following HTTP header:
+```http
+Authorization: Bearer <your_FINANCE_WEBHOOK_SECRET>
+```
+This secret token is configured in your `.env` file via the `FINANCE_WEBHOOK_SECRET` variable.
+
+---
+
+#### 📥 Webhook Payload Formats
+
+The `POST /webhook/finance` endpoint accepts flexible JSON objects. Below are the structured payload examples:
+
+##### A. Standard Expense / Income (By Name fallback)
+```json
+{
+  "amount": 45000,
+  "account": "GoPay Wallet",
+  "category": "🥫 Mandatory Food",
+  "payee_name": "Kopi Kenangan",
+  "description": "Es Kopi Susu Aren",
+  "date": "2026-09-04",
+  "type": "expense" // Use "income" for positive income transactions
+}
+```
+
+##### B. Standard Expense / Income (Using Explicit UUIDs - Recommended for n8n/MCP)
+```json
+{
+  "amount": 25000,
+  "account_id": "4e3d68f2-3698-410b-98be-49f974b160a7", // Mandiri Payroll Account UUID
+  "category_id": "19b6776a-3d7d-470c-b629-65f6111e0cac", // Snacks Category UUID
+  "payee_id": "optional_payee_uuid_here", // If omitted, payee_name is used
+  "payee_name": "Alfamart",
+  "description": "Camilan sore",
+  "date": "2026-09-04",
+  "type": "expense"
+}
+```
+
+##### C. Internal Transfer Between Accounts (By Name fallback)
+```json
+{
+  "amount": 500000,
+  "account": "Mandiri Payroll Account", // Source account
+  "destination_account": "GoPay Wallet", // Destination account
+  "description": "Top-up GoPay",
+  "date": "2026-09-04",
+  "type": "transfer"
+}
+```
+
+##### D. Internal Transfer Between Accounts (Using Explicit UUIDs)
+```json
+{
+  "amount": 100000,
+  "source_account_id": "4e3d68f2-3698-410b-98be-49f974b160a7", // Source Account UUID
+  "destination_account_id": "83ecd7d9-c258-4848-93b0-d3f1a325b093", // Destination Account UUID
+  "description": "Top-up GoPay wallet from Mandiri",
+  "date": "2026-09-04",
+  "type": "transfer"
+}
+```
+
+---
+
+#### 📱 Interactive Bot Flow
+1.  The webhook receives a secure POST request and saves it in SQLite with a `pending` status.
+2.  It sends you a Discord DM with **[ Accept ]**, **[ Deny ]**, and **[ Modify ]** buttons.
+    *   *Accept:* Logs the transaction immediately to Actual Budget and turns the DM embed green.
+    *   *Deny:* Rejects the transaction, logs it internally in SQLite, and turns the DM embed red.
+3.  **Secure Web-UI Modification:** Clicking *Modify* sends you an ephemeral URL containing a secure cryptographic HMAC validation token.
     -   Opens a styled, responsive dark-theme Web-UI.
-    -   Loads dropdown options for **accounts and categories live from your Actual Budget** to modify and approve safely in your browser.
-    -   Instantly updates your original Discord DM to green and removes buttons to prevent double-logging.
+    -   Loads accounts and categories live from your Actual Budget server.
+    -   Allows modification and logging securely in your browser. Saving automatically updates your Discord DM to green and removes buttons.
 
 ---
 

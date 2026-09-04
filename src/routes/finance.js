@@ -24,6 +24,16 @@ module.exports = (client) => {
       const payload = req.body;
       console.log('[Webhook] Received transaction payload:', payload);
 
+      // Webhook Security Validation (Enforce Bearer Token if configured in .env)
+      const expectedSecret = process.env.FINANCE_WEBHOOK_SECRET;
+      if (expectedSecret) {
+        const authHeader = req.headers.authorization;
+        if (!authHeader || authHeader !== `Bearer ${expectedSecret}`) {
+          console.warn('[Webhook] Unauthorized access attempt rejected: missing or invalid Bearer Token.');
+          return res.status(401).json({ error: 'Unauthorized. Missing or invalid finance webhook secret token.' });
+        }
+      }
+
       // Validate required fields
       if (!payload.amount || !payload.account) {
         return res.status(400).json({ error: 'Missing required fields: amount and account are mandatory.' });
