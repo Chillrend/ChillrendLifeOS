@@ -159,6 +159,10 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
+client.on('error', (error) => {
+    console.error('Discord client encountered an error:', error.message);
+});
+
 // --- Register Express Routes ---
 app.use('/', require('./routes/finance')(client));
 
