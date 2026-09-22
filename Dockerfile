@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y \
     g++ \
     wget \
     gnupg \
+    unzip \
     ca-certificates \
     procps \
     libxss1 \
