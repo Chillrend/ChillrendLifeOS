@@ -64,10 +64,10 @@ async function generateDailyLog(dateInput = null) {
 
   // Filter tasks completed on targetDate or currently in-progress
   const relevantTasks = tasks.filter(t => {
-    const isCompletedOnDate = (t.done || t.bucket_id === doneBucketId) && 
+    const isCompletedOnDate = (t.done || (t.buckets && t.buckets.some(b => b.id === doneBucketId))) && 
         t.done_at && t.done_at.startsWith(targetDate);
     
-    const isInProgressOnDate = t.bucket_id === inProgressBucketId;
+    const isInProgressOnDate = t.buckets && t.buckets.some(b => b.id === inProgressBucketId);
 
     return isCompletedOnDate || isInProgressOnDate;
   });
@@ -83,7 +83,7 @@ async function generateDailyLog(dateInput = null) {
   const tasksWithData = relevantTasks.map(t => ({
     title: t.title,
     description: t.description || 'No description provided.',
-    statusName: (t.done || t.bucket_id === doneBucketId) ? 'Done' : 'In Progress'
+    statusName: (t.done || (t.buckets && t.buckets.some(b => b.id === doneBucketId))) ? 'Done' : 'In Progress'
   }));
 
   // 3. Generate log using Gemini
@@ -125,7 +125,7 @@ async function generateWeeklyWrapup() {
 
   // Filter completed tasks for Gemini report
   const completedTasks = tasks.filter(t => {
-    if (!(t.done || t.bucket_id === doneBucketId)) return false;
+    if (!(t.done || (t.buckets && t.buckets.some(b => b.id === doneBucketId)))) return false;
     if (!t.done_at) return false;
     const doneDate = new Date(t.done_at);
     return doneDate >= sevenDaysAgo;
@@ -145,7 +145,7 @@ async function generateWeeklyWrapup() {
   // Find all active (non-done) tasks
   const activeTasks = tasks.filter(t => 
     !t.done && 
-    (t.bucket_id === backlogBucketId || t.bucket_id === inProgressBucketId || t.bucket_id === pausedBucketId || t.bucket_id === 0 || !t.bucket_id)
+    (t.buckets && (t.buckets.some(b => b.id === backlogBucketId) || t.buckets.some(b => b.id === inProgressBucketId) || t.buckets.some(b => b.id === pausedBucketId)) || !t.buckets || t.buckets.length === 0)
   );
 
   let extendedCount = 0;
@@ -158,16 +158,34 @@ async function generateWeeklyWrapup() {
     }
   }
 
-  // 2. UNASSIGN COMPLETED TASKS from Kanban board to prevent overcrowding
-  const doneTasks = tasks.filter(t => t.bucket_id === doneBucketId);
+  // 2. UNASSIGN COMPLETED TASKS from Kanban board to prevent overcrowding by moving them to an Archive project
+  const doneTasks = tasks.filter(t => t.buckets && t.buckets.some(b => b.id === doneBucketId));
   let archivedCount = 0;
-  for (const task of doneTasks) {
+  
+  if (doneTasks.length > 0) {
     try {
-      // Set bucket_id to 0 to unassign it from any column on the Kanban board
-      await vikunja.updateTask(task.id, { bucket_id: 0 });
-      archivedCount++;
+      // Find or create the Archive project
+      const allProjects = await vikunja.getProjects();
+      let archiveProject = allProjects.find(p => p.title.toLowerCase() === 'archive' && p.parent_project_id === 0);
+      
+      if (!archiveProject) {
+        console.log('[Wrapup] Archive project not found, creating one...');
+        archiveProject = await vikunja.createProject({ title: 'Archive' });
+      }
+
+      if (archiveProject && archiveProject.id) {
+        for (const task of doneTasks) {
+          try {
+            // Move task to the archive project
+            await vikunja.updateTask(task.id, { project_id: archiveProject.id });
+            archivedCount++;
+          } catch (err) {
+            console.error(`[Wrapup] Failed to archive done task #${task.id}:`, err.message);
+          }
+        }
+      }
     } catch (err) {
-      console.error(`[Wrapup] Failed to unassign done task #${task.id}:`, err.message);
+      console.error('[Wrapup] Failed to handle Archive project logic:', err.message);
     }
   }
 

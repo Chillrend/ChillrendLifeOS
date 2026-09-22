@@ -75,8 +75,10 @@ class VikunjaService {
    */
   async getTasks(filters = {}) {
     try {
-      // Fetch tasks for the project
-      const response = await this.client.get(`/projects/${this.projectId}/tasks`, { params: filters });
+      // Fetch tasks for the project and request expanded buckets
+      const response = await this.client.get(`/projects/${this.projectId}/tasks`, { 
+        params: { ...filters, expand: 'buckets' } 
+      });
       return response.data || [];
     } catch (error) {
       console.error('[Vikunja] Error fetching tasks:', error.response?.data || error.message);
@@ -191,6 +193,32 @@ class VikunjaService {
     } catch (error) {
       console.error(`[Vikunja] Error setting done=${isDone} for task ${taskId}:`, error.response?.data || error.message);
       throw new Error('Could not update task completion in Vikunja.');
+    }
+  }
+
+  /**
+   * Get all projects
+   */
+  async getProjects() {
+    try {
+      const response = await this.client.get('/projects');
+      return response.data || [];
+    } catch (error) {
+      console.error('[Vikunja] Error fetching projects:', error.response?.data || error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Create a new project
+   */
+  async createProject(projectDetails) {
+    try {
+      const response = await this.client.put('/projects', projectDetails);
+      return response.data;
+    } catch (error) {
+      console.error('[Vikunja] Error creating project:', error.response?.data || error.message);
+      throw new Error('Could not create project in Vikunja.');
     }
   }
 
