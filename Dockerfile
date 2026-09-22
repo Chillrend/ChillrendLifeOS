@@ -37,6 +37,9 @@ RUN npm install
 # but good to have for production builds later
 COPY . .
 
+# Ensure Puppeteer downloads Chromium explicitly during the Docker build
+RUN npx puppeteer browsers install chrome
+
 EXPOSE 3000
 
 CMD ["npm", "run", "dev"]
