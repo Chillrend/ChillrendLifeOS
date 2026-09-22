@@ -49,13 +49,13 @@ module.exports = {
             await interaction.editReply({ embeds: [embed] });
 
             if (shouldSubmit) {
-                const msg = await interaction.followUp('⏳ Submitting logs to the Kemdikbud portal via Puppeteer... Please wait.');
+                const msg = await interaction.followUp('⏳ Submitting logs to the portal via Puppeteer... Please wait.');
                 const submitResult = await timesheetService.submitDailyLogs(tasks, result.targetDate);
                 
                 if (submitResult.success) {
-                    await msg.edit(`✅ **Success:** ${submitResult.message}`);
+                    await interaction.webhook.editMessage(msg.id, { content: `✅ **Success:** ${submitResult.message}` });
                 } else {
-                    await msg.edit(`❌ **Failed:** ${submitResult.message}`);
+                    await interaction.webhook.editMessage(msg.id, { content: `❌ **Failed:** ${submitResult.message}` });
                 }
             }
 
