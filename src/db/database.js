@@ -29,9 +29,20 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     date TEXT UNIQUE NOT NULL, -- 'YYYY-MM-DD'
     log_content TEXT NOT NULL,
+    submitted INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 `);
+
+// Migration to add submitted column if it doesn't exist
+try {
+  const checkColumnStmt = db.prepare("SELECT name FROM pragma_table_info('daily_logs') WHERE name='submitted'");
+  if (!checkColumnStmt.get()) {
+    db.exec('ALTER TABLE daily_logs ADD COLUMN submitted INTEGER DEFAULT 0');
+  }
+} catch (err) {
+  console.error("Migration error:", err);
+}
 
 module.exports = {
   db,
@@ -62,18 +73,36 @@ module.exports = {
   },
 
   // Helper methods for daily logs
-  saveDailyLog: (date, logContent) => {
-    const stmt = db.prepare('INSERT OR REPLACE INTO daily_logs (date, log_content) VALUES (?, ?)');
-    return stmt.run(date, logContent);
+  saveDailyLog: (date, tasksWithData, submitted = 0) => {
+    const stmt = db.prepare('INSERT OR REPLACE INTO daily_logs (date, log_content, submitted) VALUES (?, ?, ?)');
+    return stmt.run(date, JSON.stringify(tasksWithData), submitted);
+  },
+
+  markDailyLogSubmitted: (date) => {
+    const stmt = db.prepare('UPDATE daily_logs SET submitted = 1 WHERE date = ?');
+    return stmt.run(date);
   },
 
   getDailyLog: (date) => {
     const stmt = db.prepare('SELECT * FROM daily_logs WHERE date = ?');
-    return stmt.get(date);
+    const row = stmt.get(date);
+    if (!row) return null;
+    try {
+      row.log_content = JSON.parse(row.log_content);
+    } catch (e) {
+      // Handle legacy raw text logs gracefully if they exist
+      console.warn(`[DB] Failed to parse JSON for log on ${date}. Returning raw text.`);
+    }
+    return row;
   },
 
   getAllDailyLogs: () => {
     const stmt = db.prepare('SELECT * FROM daily_logs ORDER BY date DESC');
-    return stmt.all();
+    return stmt.all().map(row => {
+      try {
+        row.log_content = JSON.parse(row.log_content);
+      } catch (e) {}
+      return row;
+    });
   }
 };

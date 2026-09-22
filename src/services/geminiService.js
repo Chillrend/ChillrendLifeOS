@@ -259,10 +259,67 @@ You are a highly precise financial query API. Your ONLY function is to analyze t
   );
 };
 
+/**
+ * Maps a list of tasks to the most appropriate SKP values.
+ * @param {Array<object>} tasks - The tasks to map.
+ * @param {Array<object>} availableSkps - Array of { value: string, label: string }
+ */
+const mapTasksToSKP = async (tasks, availableSkps) => {
+    const mappingSchema = z.object({
+        mappings: z.array(z.object({
+            taskTitle: z.string().describe("The original title of the task"),
+            skpValue: z.string().describe("The most appropriate SKP value string from the available options")
+        })).describe("List of task to SKP mappings")
+    });
+
+    const prompt = `
+You are a precise JSON data mapper. Your ONLY job is to map tasks to an SKP value and output valid JSON.
+
+**CRITICAL INSTRUCTIONS:**
+1. You MUST output ONLY valid JSON. No markdown, no preamble.
+2. The root must be an object with a "mappings" array.
+3. Each item in the array must be an object with exactly two keys: "taskTitle" and "skpValue".
+4. The "skpValue" MUST be chosen ONLY from the provided list of Available SKP IDs.
+
+**EXPECTED JSON FORMAT:**
+{
+  "mappings": [
+    {
+      "taskTitle": "Task 1 Name",
+      "skpValue": "ID_from_list"
+    }
+  ]
+}
+
+**AVAILABLE SKPs:**
+${availableSkps.map(s => `- ID: "${s.value}", Description: "${s.label}"`).join('\n')}
+
+**TASKS TO MAP:**
+${tasks.map(t => `- Title: "${t.title}"\n  Description: "${t.description || 'No description'}"`).join('\n\n')}
+`;
+
+    try {
+        const result = await generateAndValidateJsonWithRetry(
+            genAI,
+            PARSER_MODEL,
+            prompt,
+            undefined, // DO NOT pass zodToJsonSchema here, it breaks array of objects parsing for this specific schema structure in Gemini API
+            mappingSchema
+        );
+        return result.mappings;
+    } catch (error) {
+        console.error('[mapTasksToSKP] Error:', error.message);
+        // Fallback: return the first SKP for everything, or default
+        const defaultSkp = availableSkps[0] ? availableSkps[0].value : (process.env.TIMESHEET_DEFAULT_SKP || "1");
+        return tasks.map(t => ({ taskTitle: t.title, skpValue: defaultSkp }));
+    }
+};
+
 module.exports = {
   inferDate,
   refineTask,
   createDailyLog,
+  mapTasksToSKP,
   processTransaction,
   processTransfer,
   processBalanceQuery,

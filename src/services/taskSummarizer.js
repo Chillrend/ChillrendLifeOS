@@ -82,24 +82,19 @@ async function generateDailyLog(dateInput = null) {
 
   const tasksWithData = relevantTasks.map(t => ({
     title: t.title,
-    description: t.description || 'No description provided.',
+    description: t.description || '', // Default to empty string instead of 'No description provided.'
     statusName: (t.done || (t.buckets && t.buckets.some(b => b.id === doneBucketId))) ? 'Done' : 'In Progress'
   }));
 
-  // 3. Generate log using Gemini
-  const dailyLog = await createDailyLog(tasksWithData, displayDate);
-  if (!dailyLog) {
-    throw new Error('Gemini failed to generate the daily work log.');
-  }
-
-  // 4. Save to cache
-  db.saveDailyLog(targetDate, dailyLog);
+  // 3. Instead of generating a single markdown string, we now rely on structured data
+  // We save this structured data to the cache
+  db.saveDailyLog(targetDate, tasksWithData);
 
   return {
     cached: false,
     displayDate,
     targetDate,
-    log: dailyLog
+    log: tasksWithData // Now returns structured JSON instead of a markdown string
   };
 }
 

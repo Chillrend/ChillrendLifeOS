@@ -1,5 +1,6 @@
 const cron = require('node-cron');
 const { generateDailyLog, generateWeeklyWrapup } = require('../services/taskSummarizer');
+const timesheetService = require('../services/timesheetService');
 const { EmbedBuilder } = require('discord.js');
 
 module.exports = (client) => {
@@ -35,13 +36,33 @@ module.exports = (client) => {
 
       const embed = new EmbedBuilder()
         .setTitle(`📅 Automated Daily Work Log - ${result.displayDate}`)
-        .setDescription('Here is your automated end-of-day timesheet log:')
-        .addFields({ name: 'Timesheet Log', value: `\`\`\`${result.log}\`\`\`` })
+        .setDescription('Here is your automated end-of-day structured timesheet log:')
         .setColor(0x00FF00)
         .setFooter({ text: 'Automated by LifeOS Scheduler' });
 
+      const tasks = result.log;
+      let logText = '';
+      for (let i = 0; i < tasks.length; i++) {
+        const t = tasks[i];
+        const cleanDesc = t.description ? t.description.replace(/<[^>]*>/g, '').trim().substring(0, 100) : 'No description';
+        logText += `**${i+1}. ${t.title}** (${t.statusName})\n*${cleanDesc}*\n\n`;
+      }
+      if (logText.length > 1024) logText = logText.substring(0, 1020) + '...';
+      embed.addFields({ name: 'Tasks', value: logText || 'No tasks found.' });
+
       await owner.send({ embeds: [embed] });
       console.log('[Scheduler] Automated daily log sent to owner successfully.');
+
+      // Auto-submit if configured
+      if (process.env.TIMESHEET_AUTO_SUBMIT === 'true') {
+        const submitMsg = await owner.send('⏳ Automatically submitting logs to the Kemdikbud portal...');
+        const submitResult = await timesheetService.submitDailyLogs(tasks, result.targetDate);
+        if (submitResult.success) {
+          await submitMsg.edit(`✅ **Success:** ${submitResult.message}`);
+        } else {
+          await submitMsg.edit(`❌ **Failed:** ${submitResult.message}`);
+        }
+      }
 
     } catch (error) {
       console.error('[Scheduler Error] Daily report automation failed:', error.message);
