@@ -38,7 +38,7 @@ RUN npm install
 COPY . .
 
 # Ensure Puppeteer downloads Chromium explicitly during the Docker build
-RUN npx puppeteer browsers install chrome
+RUN npx puppeteer browsers clear && npx puppeteer browsers install chrome
 
 EXPOSE 3000
 
