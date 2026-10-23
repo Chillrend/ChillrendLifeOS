@@ -46,7 +46,7 @@ module.exports = {
                     }
                     
                     const filter = m => m.author.id === interaction.user.id;
-                    const collector = channel.createMessageCollector({ filter, max: 1, time: 60000 });
+                    const collector = channel.createMessageCollector({ filter, max: 1, time: 300000 }); // 5 minutes
 
                     const userReply = await new Promise((resolve, reject) => {
                         collector.on('collect', m => resolve(m));

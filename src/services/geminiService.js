@@ -58,7 +58,7 @@ const refineTask = async (title, description) => {
         priority: z.enum(priorities).optional().describe('The priority level of the task. Infer from the user\'s language. Must be all lowercase: "urgent", "high", "medium", or "low".'),
         tags: z.array(z.string()).describe('A list of tags or keywords that fit this task. (e.g., "Ideas", "Incident", "Ops", "Development", "Networking"). Infer from content.'),
         isSufficient: z.boolean().describe('True if the user provided enough information to create a meaningful task. False if the task is too vague or lacks context.'),
-        questions: z.array(z.string()).describe('If isSufficient is false, provide 1-3 specific questions to ask the user to gather the missing information. If true, this should be an empty array.'),
+        questions: z.array(z.string()).describe('If isSufficient is false, provide EXACTLY 1 or 2 VERY SHORT, concise questions to ask the user. If true, empty array.'),
     });
 
     const prompt = `
@@ -70,7 +70,7 @@ const refineTask = async (title, description) => {
         **Objective:** [1-2 sentences explaining the goal]
         **Action Items:** [Bullet points of steps to take]
         **Context:** [Any background info, if applicable]
-    3.  **Grill the User:** If the input is too vague (e.g. "do the thing", "fix bug"), set isSufficient to false and ask targeted questions.
+    3.  **Grill the User:** If the input is too vague, set isSufficient to false and ask EXACTLY 1 or 2 VERY SHORT, targeted questions. Do not overwhelm the user with long questions.
     4.  **Determine Priority & Tags:** Infer priority ("urgent", "high", "medium", "low") and relevant tags.
     5.  **Schema Match:** Adhere strictly to the JSON Schema.
 
