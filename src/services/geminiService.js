@@ -49,14 +49,18 @@ const inferDate = async (text) => {
 /**
  * Refines a task's title and description and determines its properties.
  */
-const refineTask = async (title, description) => {
+const refineTask = async (title, description, availableTags = []) => {
     const priorities = ['urgent', 'high', 'medium', 'low'];
+
+    const tagsInstruction = availableTags.length > 0 
+        ? `Select relevant tags from this existing list: [${availableTags.join(', ')}]. DO NOT create new tags.` 
+        : `Select relevant tags that categorize the task (e.g., "Ideas", "Incident", "Ops", "Development", "Networking").`;
 
     const taskRefinementZodSchema = z.object({
         title: z.string().describe('A clear, concise, and action-oriented title for the task. Use exactly the key "title", do not use synonyms like "refinedTitle".'),
-        notes: z.string().describe('A well-structured breakdown of the task. Use markdown for clarity (e.g., bullet points, sub-tasks).'),
+        notes: z.string().describe('A well-structured breakdown of the task. Use markdown for clarity. Use \n\n for line breaks between sections to ensure proper rendering.'),
         priority: z.enum(priorities).optional().describe('The priority level of the task. Infer from the user\'s language. Must be all lowercase: "urgent", "high", "medium", or "low".'),
-        tags: z.array(z.string()).describe('A list of tags or keywords that fit this task. (e.g., "Ideas", "Incident", "Ops", "Development", "Networking"). Infer from content.'),
+        tags: z.array(z.string()).describe(tagsInstruction),
         isSufficient: z.boolean().describe('True if the user provided enough information to create a meaningful task. False if the task is too vague or lacks context.'),
         questions: z.array(z.string()).describe('If isSufficient is false, provide EXACTLY 1 or 2 VERY SHORT, concise questions to ask the user. If true, empty array.'),
     });
@@ -66,12 +70,17 @@ const refineTask = async (title, description) => {
 
     **CRITICAL INSTRUCTIONS:**
     1.  **Refine Title:** Create a new title that is clear, concise, and action-oriented. You MUST output this exactly under the key "title". Do NOT use "refinedTitle" or any other synonyms.
-    2.  **Structure notes:** Break down the description into structured markdown notes. YOU MUST strictly use this format with these exact headers:
-        **Objective:** [1-2 sentences explaining the goal]
-        **Action Items:** [Bullet points of steps to take]
-        **Context:** [Any background info, if applicable]
+    2.  **Structure notes:** Break down the description into structured markdown notes. YOU MUST strictly use this format with these exact headers, AND use \`\\n\\n\` between sections:
+        ### Objective
+        [1-2 sentences explaining the goal]
+        
+        ### Action Items
+        - [Bullet points of steps to take]
+        
+        ### Context
+        [Any background info, if applicable]
     3.  **Grill the User:** If the input is too vague, set isSufficient to false and ask EXACTLY 1 or 2 VERY SHORT, targeted questions. Do not overwhelm the user with long questions.
-    4.  **Determine Priority & Tags:** Infer priority ("urgent", "high", "medium", "low") and relevant tags.
+    4.  **Determine Priority & Tags:** Infer priority ("urgent", "high", "medium", "low"). ${tagsInstruction}
     5.  **Schema Match:** Adhere strictly to the JSON Schema.
 
     **USER'S TASK:**

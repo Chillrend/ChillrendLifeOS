@@ -138,13 +138,13 @@ class VikunjaService {
       if (taskDetails.tags && taskDetails.tags.length > 0) {
         const availableLabels = await this.getLabels();
         for (const tagName of taskDetails.tags) {
-          // Find or create label
+          // Find label strictly
           let label = availableLabels.find(l => l.title.toLowerCase() === tagName.toLowerCase());
-          if (!label) {
-            label = await this.createLabel(tagName);
-          }
+          
           if (label && label.id) {
             await this.associateLabelToTask(createdTask.id, label.id);
+          } else {
+            console.log(`[Vikunja] Skipped adding tag "${tagName}" because it does not exist and auto-creation is disabled.`);
           }
         }
       }

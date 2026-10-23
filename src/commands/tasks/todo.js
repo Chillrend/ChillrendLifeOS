@@ -25,12 +25,15 @@ module.exports = {
             let currentDescription = interaction.options.getString('description');
 
             const vikunja = new VikunjaService();
+            const availableLabels = await vikunja.getLabels();
+            const labelNames = availableLabels.map(l => l.title);
+
             let refined;
             let isRefinedSufficient = false;
 
             // 1. Refine the task with Gemini, utilizing a Grill-Me loop
             while (!isRefinedSufficient) {
-                refined = await refineTask(initialTitle, currentDescription);
+                refined = await refineTask(initialTitle, currentDescription, labelNames);
                 
                 if (refined.isSufficient === false && refined.questions && refined.questions.length > 0) {
                     const questionText = refined.questions.map(q => `- ${q}`).join('\n');
@@ -89,7 +92,8 @@ module.exports = {
                         return await interaction.editReply({ content: '⏳ Task creation cancelled due to timeout (no response).', components: [], embeds: [] });
                     }
 
-                    await interaction.editReply({ content: '🔄 Refining task with new information...', embeds: [] });
+                    // Remove the lingering modal button components
+                    await interaction.editReply({ content: '🔄 Refining task with new information...', components: [], embeds: [] });
                 } else {
                     isRefinedSufficient = true;
                 }
@@ -151,7 +155,7 @@ module.exports = {
                 .setColor(0x00FF00)
                 .setFooter({ text: `Task ID: ${createdTask.id}` });
 
-            await interaction.editReply({ embeds: [embed] });
+            await interaction.editReply({ content: '', embeds: [embed], components: [] });
 
         } catch (error) {
             console.error('Todo Command Error:', error);
