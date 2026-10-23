@@ -1,5 +1,5 @@
 const VikunjaService = require('./vikunjaService');
-const { createDailyLog, inferDate } = require('./geminiService');
+const { createDailyLog, inferDate, summarizeTasksForDailyLog } = require('./geminiService');
 const db = require('../db/database');
 const { GoogleGenAI } = require('@google/genai');
 const { toZonedTime, fromZonedTime } = require('date-fns-tz');
@@ -62,6 +62,7 @@ async function generateDailyLog(dateInput = null) {
   const inProgressBucketId = parseInt(process.env.VIKUNJA_BUCKET_INPROGRESS_ID, 10);
   const doneBucketId = parseInt(process.env.VIKUNJA_BUCKET_DONE_ID, 10);
 
+  
   // Filter tasks completed on targetDate or currently in-progress
   const relevantTasks = tasks.filter(t => {
     const isCompletedOnDate = (t.done || (t.buckets && t.buckets.some(b => b.id === doneBucketId))) && 
@@ -80,11 +81,23 @@ async function generateDailyLog(dateInput = null) {
     };
   }
 
-  const tasksWithData = relevantTasks.map(t => ({
-    title: t.title,
-    description: t.description || '', // Default to empty string instead of 'No description provided.'
-    statusName: (t.done || (t.buckets && t.buckets.some(b => b.id === doneBucketId))) ? 'Done' : 'In Progress'
-  }));
+  // Fetch comments for relevant tasks
+  const rawTasksWithData = [];
+  for (const t of relevantTasks) {
+      const comments = await vikunja.getTaskComments(t.id);
+      const commentsText = comments.map(c => c.comment).join(' | ');
+      
+      rawTasksWithData.push({
+        title: t.title,
+        description: t.description || '',
+        comments: commentsText,
+        statusName: (t.done || (t.buckets && t.buckets.some(b => b.id === doneBucketId))) ? 'Done' : 'In Progress'
+      });
+  }
+
+  // 3. Summarize the tasks using Gemini to make them concise and impactful
+  const tasksWithData = await summarizeTasksForDailyLog(rawTasksWithData);
+
 
   // 3. Instead of generating a single markdown string, we now rely on structured data
   // We save this structured data to the cache

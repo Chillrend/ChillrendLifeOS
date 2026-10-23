@@ -48,8 +48,10 @@ module.exports = {
 
             await interaction.editReply({ embeds: [embed] });
 
+            
             if (shouldSubmit) {
-                const msg = await interaction.followUp('⏳ Submitting logs to the portal via Puppeteer... Please wait.');
+                // Send an ephemeral followUp message so only the user sees it, and they can dismiss it
+                const msg = await interaction.followUp({ content: '⏳ Submitting logs to the portal via Puppeteer... Please wait.', ephemeral: true });
                 const submitResult = await timesheetService.submitDailyLogs(tasks, result.targetDate);
                 
                 if (submitResult.success) {
@@ -58,6 +60,7 @@ module.exports = {
                     await interaction.webhook.editMessage(msg.id, { content: `❌ **Failed:** ${submitResult.message}` });
                 }
             }
+
 
         } catch (error) {
             console.error('Daily Command Error:', error);

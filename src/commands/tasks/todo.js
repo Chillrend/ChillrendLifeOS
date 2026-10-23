@@ -16,19 +16,62 @@ module.exports = {
             option.setName('description')
                 .setDescription('A detailed description of the task')
                 .setRequired(true)),
+    
     async execute(interaction) {
         await interaction.deferReply({ ephemeral: true });
 
         try {
             const initialTitle = interaction.options.getString('title');
-            const initialDescription = interaction.options.getString('description');
+            let currentDescription = interaction.options.getString('description');
 
             const vikunja = new VikunjaService();
+            let refined;
+            let isRefinedSufficient = false;
 
-            // 1. Refine the task with Gemini
-            const refined = await refineTask(initialTitle, initialDescription);
+            // 1. Refine the task with Gemini, utilizing a Grill-Me loop
+            while (!isRefinedSufficient) {
+                refined = await refineTask(initialTitle, currentDescription);
+                
+                if (refined.isSufficient === false && refined.questions && refined.questions.length > 0) {
+                    const questionText = refined.questions.map(q => `- ${q}`).join('\n');
+                    await interaction.editReply({ 
+                        content: `🤔 **I need more details to make this a good task.**\n\nPlease answer the following questions in this channel:\n${questionText}\n\n*(I am listening to your next message...)*`,
+                        embeds: []
+                    });
+
+                    // Wait for the user to reply in the channel
+                    const filter = m => m.author.id === interaction.user.id;
+                    const collector = interaction.channel.createMessageCollector({ filter, max: 1, time: 60000 });
+
+                    const userReply = await new Promise((resolve, reject) => {
+                        collector.on('collect', m => resolve(m));
+                        collector.on('end', collected => {
+                            if (collected.size === 0) reject(new Error('timeout'));
+                        });
+                    }).catch(() => null);
+
+                    if (!userReply) {
+                        return await interaction.editReply({ content: '⏳ Task creation cancelled due to timeout (no response).', embeds: [] });
+                    }
+
+                    // Append the new info
+                    currentDescription += `\n\n**User Clarification:** ${userReply.content}`;
+                    
+                    // Cleanup user's chat message to keep the channel clean
+                    try {
+                        await userReply.delete();
+                    } catch (e) {
+                        console.error('Failed to delete user reply message:', e);
+                    }
+
+                    await interaction.editReply({ content: '🔄 Refining task with new information...', embeds: [] });
+                } else {
+                    isRefinedSufficient = true;
+                }
+            }
 
             // 2. Calculate dynamic dates based on the configured timezone
+
             const timezone = process.env.APP_TIMEZONE || 'Asia/Jakarta';
             const nowInTimezone = toZonedTime(new Date(), timezone);
 

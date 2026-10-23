@@ -57,6 +57,8 @@ const refineTask = async (title, description) => {
         notes: z.string().describe('A well-structured breakdown of the task. Use markdown for clarity (e.g., bullet points, sub-tasks).'),
         priority: z.enum(priorities).optional().describe('The priority level of the task. Infer from the user\'s language. Must be all lowercase: "urgent", "high", "medium", or "low".'),
         tags: z.array(z.string()).describe('A list of tags or keywords that fit this task. (e.g., "Ideas", "Incident", "Ops", "Development", "Networking"). Infer from content.'),
+        isSufficient: z.boolean().describe('True if the user provided enough information to create a meaningful task. False if the task is too vague or lacks context.'),
+        questions: z.array(z.string()).describe('If isSufficient is false, provide 1-3 specific questions to ask the user to gather the missing information. If true, this should be an empty array.'),
     });
 
     const prompt = `
@@ -64,10 +66,13 @@ const refineTask = async (title, description) => {
 
     **CRITICAL INSTRUCTIONS:**
     1.  **Refine Title:** Create a new title that is clear, concise, and action-oriented. You MUST output this exactly under the key "title". Do NOT use "refinedTitle" or any other synonyms.
-    2.  **Structure notes:** Break down the description into structured markdown notes.
-    3.  **Determine Priority:** Infer the priority from the user's language. Use exactly one of the lowercase values: "urgent", "high", "medium", or "low".
-    4.  **Determine Tags:** Select relevant tags that categorize the task (e.g., "Ideas", "Incident", "Ops", "Development", "Networking").
-    5.  **Schema Match:** Adhere strictly to the JSON schema provided.
+    2.  **Structure notes:** Break down the description into structured markdown notes. YOU MUST strictly use this format with these exact headers:
+        **Objective:** [1-2 sentences explaining the goal]
+        **Action Items:** [Bullet points of steps to take]
+        **Context:** [Any background info, if applicable]
+    3.  **Grill the User:** If the input is too vague (e.g. "do the thing", "fix bug"), set isSufficient to false and ask targeted questions.
+    4.  **Determine Priority & Tags:** Infer priority ("urgent", "high", "medium", "low") and relevant tags.
+    5.  **Schema Match:** Adhere strictly to the JSON Schema.
 
     **USER'S TASK:**
     - **Title:** "${title}"
@@ -315,7 +320,61 @@ ${tasks.map(t => `- Title: "${t.title}"\n  Description: "${t.description || 'No 
     }
 };
 
+
+/**
+ * Summarizes a list of tasks into concise, impactful descriptions suitable for a daily log.
+ * @param {Array<object>} tasks - The raw tasks from Vikunja (with title, description, and comments).
+ * @returns {Promise<Array<object>>} - The tasks with summarized descriptions.
+ */
+const summarizeTasksForDailyLog = async (tasks) => {
+    const summarizeSchema = z.object({
+        tasks: z.array(z.object({
+            title: z.string(),
+            description: z.string().describe("A concise, impactful summary of what was done based on the original description and comments.")
+        }))
+    });
+
+    const prompt = `
+You are an expert technical writer creating a daily timesheet log.
+I will provide a list of tasks with their original descriptions and any comments added to them.
+Your job is to rewrite the "description" for each task to be extremely concise, impactful, and focused on the actual work accomplished.
+
+**CRITICAL INSTRUCTIONS:**
+1. Combine the original description and comments to understand the true progress.
+2. The output description MUST be a single, plain text paragraph. NO Markdown (no bold, italics, bullets, etc.).
+3. Keep it brief but impactful (e.g. "Implemented the new authentication flow and resolved edge cases identified during testing.")
+4. Preserve the exact original title.
+5. Return the array of tasks via the JSON schema.
+
+**TASKS:**
+${JSON.stringify(tasks, null, 2)}
+`;
+
+    try {
+        const result = await generateAndValidateJsonWithRetry(
+            genAI,
+            PARSER_MODEL,
+            prompt,
+            undefined, // no direct openapi3 conversion here to avoid complex array structure issues
+            summarizeSchema
+        );
+        
+        // Merge the summarized descriptions back into the original task objects
+        return tasks.map(originalTask => {
+            const summaryTask = result.tasks.find(t => t.title === originalTask.title);
+            return {
+                ...originalTask,
+                description: summaryTask ? summaryTask.description : originalTask.description
+            };
+        });
+    } catch (error) {
+        console.error('[summarizeTasksForDailyLog] Error:', error.message);
+        return tasks; // Fallback to raw tasks if Gemini fails
+    }
+};
+
 module.exports = {
+  summarizeTasksForDailyLog,
   inferDate,
   refineTask,
   createDailyLog,

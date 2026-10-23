@@ -99,6 +99,20 @@ class VikunjaService {
     }
   }
 
+
+  /**
+   * Get comments for a specific task
+   */
+  async getTaskComments(taskId) {
+    try {
+      const response = await this.client.get(`/tasks/${taskId}/comments`);
+      return response.data || [];
+    } catch (error) {
+      console.error(`[Vikunja] Error fetching comments for task ${taskId}:`, error.response?.data || error.message);
+      return [];
+    }
+  }
+
   /**
    * Create a new task in the project
    */
