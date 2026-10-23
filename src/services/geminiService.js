@@ -58,7 +58,7 @@ const refineTask = async (title, description, availableTags = []) => {
 
     const taskRefinementZodSchema = z.object({
         title: z.string().describe('A clear, concise, and action-oriented title for the task. Use exactly the key "title", do not use synonyms like "refinedTitle".'),
-        notes: z.string().describe('A well-structured breakdown of the task. Use markdown for clarity. Use \n\n for line breaks between sections to ensure proper rendering.'),
+        notes: z.string().describe('A well-structured breakdown of the task. MUST BE FORMATTED AS HTML using the provided structural guidelines.'),
         priority: z.enum(priorities).optional().describe('The priority level of the task. Infer from the user\'s language. Must be all lowercase: "urgent", "high", "medium", or "low".'),
         tags: z.array(z.string()).describe(tagsInstruction),
         isSufficient: z.boolean().describe('True if the user provided enough information to create a meaningful task. False if the task is too vague or lacks context.'),
@@ -70,15 +70,26 @@ const refineTask = async (title, description, availableTags = []) => {
 
     **CRITICAL INSTRUCTIONS:**
     1.  **Refine Title:** Create a new title that is clear, concise, and action-oriented. You MUST output this exactly under the key "title". Do NOT use "refinedTitle" or any other synonyms.
-    2.  **Structure notes:** Break down the description into structured markdown notes. YOU MUST strictly use this format with these exact headers, AND use \`\\n\\n\` between sections:
-        ### Objective
-        [1-2 sentences explaining the goal]
+    2.  **Structure notes:** Break down the description into structured HTML. YOU MUST strictly use HTML, no markdown. Use only these supported tags:
+        <h2>, <h3>, <p>, <ul>, <li>, <code>, <strong>, <em>, <a>, <pre>, <blockquote>, <hr>.
+        For action items, use this specific format:
+        <ul data-type="taskList">
+            <li data-type="taskItem" data-checked="false"><p>step 1</p></li>
+        </ul>
         
-        ### Action Items
-        - [Bullet points of steps to take]
+        Your output MUST follow this exact structure:
+        <h2>Objective</h2>
+        <p>[1-2 sentences explaining the goal]</p>
         
-        ### Context
-        [Any background info, if applicable]
+        <h3>Action Items</h3>
+        <ul data-type="taskList">
+            <li data-type="taskItem" data-checked="false"><p>[Step 1]</p></li>
+            <li data-type="taskItem" data-checked="false"><p>[Step 2]</p></li>
+        </ul>
+        
+        <h3>Context</h3>
+        <p>[Any background info, if applicable]</p>
+
     3.  **Grill the User:** If the input is too vague, set isSufficient to false and ask EXACTLY 1 or 2 VERY SHORT, targeted questions. Do not overwhelm the user with long questions.
     4.  **Determine Priority & Tags:** Infer priority ("urgent", "high", "medium", "low"). ${tagsInstruction}
     5.  **Schema Match:** Adhere strictly to the JSON Schema.
