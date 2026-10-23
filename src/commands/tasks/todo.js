@@ -34,49 +34,59 @@ module.exports = {
                 
                 if (refined.isSufficient === false && refined.questions && refined.questions.length > 0) {
                     const questionText = refined.questions.map(q => `- ${q}`).join('\n');
-                    await interaction.editReply({ 
-                        content: `🤔 **I need more details to make this a good task.**\n\nPlease answer the following questions in this channel:\n${questionText}\n\n*(I am listening to your next message...)*`,
-                        embeds: []
+                    
+
+                    // Use Discord's built-in awaiting component system instead of raw text messages
+                    // We will send a button that opens a modal for the user to type their answer.
+                    // This bypasses the need for the Message Content intent entirely!
+                    const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+                    
+                    const answerButton = new ButtonBuilder()
+                        .setCustomId('answer_grill_question')
+                        .setLabel('Answer Question')
+                        .setStyle(ButtonStyle.Primary);
+                        
+                    const row = new ActionRowBuilder().addComponents(answerButton);
+
+                    const message = await interaction.editReply({ 
+                        content: `🤔 **I need more details to make this a good task.**\n\n${questionText}\n\n*(Click the button below to answer)*`,
+                        components: [row]
                     });
 
-                    // Wait for the user to reply in the channel
-                    let channel = interaction.channel;
-                    if (!channel) {
-                        channel = await interaction.client.channels.fetch(interaction.channelId);
-                    }
-                    
-                    const filter = m => {
-                        console.log(`[TODO] Message detected: "${m.content}" from user ${m.author.id} (waiting for ${interaction.user.id})`);
-                        return m.author.id === interaction.user.id;
-                    };
-                    const collector = channel.createMessageCollector({ filter, max: 1, time: 300000 }); // 5 minutes
-
-                    const userReply = await new Promise((resolve, reject) => {
-                        collector.on('collect', m => {
-                            console.log(`[TODO] Message accepted by filter: "${m.content}"`);
-                            resolve(m);
-                        });
-                        collector.on('end', collected => {
-                            console.log(`[TODO] Collector ended. Collected ${collected.size} messages.`);
-                            if (collected.size === 0) reject(new Error('timeout'));
-                        });
-                    }).catch(err => {
-                        console.error(`[TODO] Collector error:`, err.message);
-                        return null;
-                    });
-
-                    if (!userReply) {
-                        return await interaction.editReply({ content: '⏳ Task creation cancelled due to timeout (no response).', embeds: [] });
-                    }
-
-                    // Append the new info
-                    currentDescription += `\n\n**User Clarification:** ${userReply.content}`;
-                    
-                    // Cleanup user's chat message to keep the channel clean
                     try {
-                        await userReply.delete();
+                        // Wait for button click
+                        const buttonInteraction = await message.awaitMessageComponent({ filter: i => i.user.id === interaction.user.id, time: 300000 });
+                        
+                        // Create and show modal
+                        const modal = new ModalBuilder()
+                            .setCustomId('grill_modal')
+                            .setTitle('Task Clarification');
+
+                        const textInput = new TextInputBuilder()
+                            .setCustomId('clarification_input')
+                            .setLabel('Your Answer')
+                            .setStyle(TextInputStyle.Paragraph)
+                            .setRequired(true);
+
+                        const modalRow = new ActionRowBuilder().addComponents(textInput);
+                        modal.addComponents(modalRow);
+
+                        await buttonInteraction.showModal(modal);
+
+                        // Wait for modal submit
+                        const modalSubmit = await buttonInteraction.awaitModalSubmit({ filter: i => i.user.id === interaction.user.id, time: 300000 });
+                        
+                        const userReplyContent = modalSubmit.fields.getTextInputValue('clarification_input');
+                        
+                        // Defer the modal update to keep the interaction alive
+                        await modalSubmit.deferUpdate();
+
+                        // Append the new info
+                        currentDescription += `\n\n**User Clarification:** ${userReplyContent}`;
+
                     } catch (e) {
-                        console.error('Failed to delete user reply message:', e);
+                        console.log('[TODO] Interaction timed out or failed:', e.message);
+                        return await interaction.editReply({ content: '⏳ Task creation cancelled due to timeout (no response).', components: [], embeds: [] });
                     }
 
                     await interaction.editReply({ content: '🔄 Refining task with new information...', embeds: [] });
