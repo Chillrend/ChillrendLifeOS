@@ -55,7 +55,7 @@ module.exports = {
 
                     try {
                         // Wait for button click
-                        const buttonInteraction = await message.awaitMessageComponent({ filter: i => i.user.id === interaction.user.id, time: 300000 });
+                        const buttonInteraction = await message.awaitMessageComponent({ filter: i => i.user.id === interaction.user.id, time: 900000 }); // 15 minutes
                         
                         // Create and show modal
                         const modal = new ModalBuilder()
@@ -74,7 +74,7 @@ module.exports = {
                         await buttonInteraction.showModal(modal);
 
                         // Wait for modal submit
-                        const modalSubmit = await buttonInteraction.awaitModalSubmit({ filter: i => i.user.id === interaction.user.id, time: 300000 });
+                        const modalSubmit = await buttonInteraction.awaitModalSubmit({ filter: i => i.user.id === interaction.user.id, time: 900000 }); // 15 minutes
                         
                         const userReplyContent = modalSubmit.fields.getTextInputValue('clarification_input');
                         
