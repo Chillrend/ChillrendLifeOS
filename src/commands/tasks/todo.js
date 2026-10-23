@@ -139,13 +139,16 @@ module.exports = {
             const displayStart = new Date(startDateISO).toLocaleString('en-US', { timeZone: timezone });
             const displayDue = new Date(dueDateISO).toLocaleString('en-US', { timeZone: timezone });
 
+            let cleanNotes = refined.notes ? refined.notes.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() : 'None';
+            if (cleanNotes.length > 1020) cleanNotes = cleanNotes.substring(0, 1020) + '...';
+
             // 4. Respond to the user
             const embed = new EmbedBuilder()
                 .setTitle('✅ Task Added & Refined')
                 .setDescription('Your task has been intelligently refined and added to Vikunja with standard work-week dates.')
                 .addFields(
                     { name: 'Title', value: createdTask.title },
-                    { name: 'Notes', value: refined.notes || 'None' },
+                    { name: 'Notes', value: cleanNotes },
                     { name: 'Bucket', value: 'Backlog', inline: true },
                     { name: 'Priority', value: refined.priority || 'None', inline: true },
                     { name: 'Labels / Tags', value: refined.tags.join(', ') || 'None', inline: true },
