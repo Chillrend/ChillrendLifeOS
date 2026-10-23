@@ -45,15 +45,25 @@ module.exports = {
                         channel = await interaction.client.channels.fetch(interaction.channelId);
                     }
                     
-                    const filter = m => m.author.id === interaction.user.id;
+                    const filter = m => {
+                        console.log(`[TODO] Message detected: "${m.content}" from user ${m.author.id} (waiting for ${interaction.user.id})`);
+                        return m.author.id === interaction.user.id;
+                    };
                     const collector = channel.createMessageCollector({ filter, max: 1, time: 300000 }); // 5 minutes
 
                     const userReply = await new Promise((resolve, reject) => {
-                        collector.on('collect', m => resolve(m));
+                        collector.on('collect', m => {
+                            console.log(`[TODO] Message accepted by filter: "${m.content}"`);
+                            resolve(m);
+                        });
                         collector.on('end', collected => {
+                            console.log(`[TODO] Collector ended. Collected ${collected.size} messages.`);
                             if (collected.size === 0) reject(new Error('timeout'));
                         });
-                    }).catch(() => null);
+                    }).catch(err => {
+                        console.error(`[TODO] Collector error:`, err.message);
+                        return null;
+                    });
 
                     if (!userReply) {
                         return await interaction.editReply({ content: '⏳ Task creation cancelled due to timeout (no response).', embeds: [] });
