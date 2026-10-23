@@ -10,7 +10,7 @@ const db = require('./db/database');
 // --- Configuration ---
 const PORT = process.env.PORT || 3000;
 const app = express();
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 const isDev = process.env.NODE_ENV === 'development';
 
 // Setup Express view engine and parser middleware
