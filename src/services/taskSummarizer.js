@@ -184,8 +184,8 @@ async function generateWeeklyWrapup() {
       if (archiveProject && archiveProject.id) {
         for (const task of doneTasks) {
           try {
-            // Move task to the archive project
-            await vikunja.updateTask(task.id, { project_id: archiveProject.id });
+            // Move task to the archive project and explicitly mark it as done
+            await vikunja.updateTask(task.id, { project_id: archiveProject.id, done: true });
             archivedCount++;
           } catch (err) {
             console.error(`[Wrapup] Failed to archive done task #${task.id}:`, err.message);
