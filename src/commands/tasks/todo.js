@@ -40,8 +40,13 @@ module.exports = {
                     });
 
                     // Wait for the user to reply in the channel
+                    let channel = interaction.channel;
+                    if (!channel) {
+                        channel = await interaction.client.channels.fetch(interaction.channelId);
+                    }
+                    
                     const filter = m => m.author.id === interaction.user.id;
-                    const collector = interaction.channel.createMessageCollector({ filter, max: 1, time: 60000 });
+                    const collector = channel.createMessageCollector({ filter, max: 1, time: 60000 });
 
                     const userReply = await new Promise((resolve, reject) => {
                         collector.on('collect', m => resolve(m));
