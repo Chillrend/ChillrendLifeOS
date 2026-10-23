@@ -148,6 +148,9 @@ client.on('interactionCreate', async interaction => {
 
     // 3. Handle dashboard components (Quick Action, select menu & buttons)
     if (interaction.isButton() || interaction.isStringSelectMenu()) {
+        // Exclude buttons managed by local awaitMessageComponent flows
+        if (interaction.customId === 'answer_grill_question') return;
+        
         const command = client.commands.get('quick-action');
         if (!command) return;
 
