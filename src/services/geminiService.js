@@ -69,13 +69,15 @@ const refineTask = async (title, description, availableTags = []) => {
     You are a productivity expert API. Your job is to analyze a user's task, refine it, and categorize it.
 
     **CRITICAL INSTRUCTIONS:**
-    1.  **Refine Title:** Create a new title that is clear, concise, and action-oriented. You MUST output this exactly under the key "title". Do NOT use "refinedTitle" or any other synonyms.
+    1.  **Refine Title:** Create a new title that is clear, concise, and action-oriented. You MUST output this exactly under the key "title". Do NOT use "refinedTitle" or any other synonyms. Titles are plain text, not HTML/Markdown — don't wrap titles in <p> tags or markdown syntax.
     2.  **Structure notes:** Break down the description into structured HTML. YOU MUST strictly use HTML, no markdown. Use only these supported tags:
-        <h2>, <h3>, <p>, <ul>, <li>, <code>, <strong>, <em>, <a>, <pre>, <blockquote>, <hr>.
-        For action items, use this specific format:
-        <ul data-type="taskList">
-            <li data-type="taskItem" data-checked="false"><p>step 1</p></li>
-        </ul>
+        <h2>, <h3>, <p>, <ul>, <ol>, <li>, <code>, <strong>, <em>, <a>, <pre>, <blockquote>, <hr>.
+        
+        **Formatting Rules for Notes:**
+        - Task lists / checkboxes MUST use <ul data-type="taskList"> with <li data-type="taskItem" data-checked="false"> to get interactive checkboxes.
+        - Inner text of task items MUST be wrapped in <p>, since the editor expects block content inside <li>.
+        - DO NOT manually set data-task-id, the editor will auto-generate it.
+        - Escape <, >, & as &lt;, &gt;, &amp; in literal text.
         
         Your output MUST follow this exact structure:
         <h2>Objective</h2>
