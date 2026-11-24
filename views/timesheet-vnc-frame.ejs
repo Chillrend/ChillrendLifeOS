@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Browser</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: #111827;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    #screen {
+      width: 100%;
+      height: 100%;
+    }
+    #overlay {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(17, 24, 39, 0.88);
+      color: #e5e7eb;
+      font-size: 14px;
+      z-index: 10;
+      transition: opacity 0.2s ease;
+    }
+    #overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="overlay">Connecting to live browser…</div>
+  <div id="screen"></div>
+
+  <script type="module">
+    import RFB from './novnc/core/rfb.js';
+
+    const sessionId = <%- JSON.stringify(sessionId) %>;
+    const token = <%- JSON.stringify(token) %>;
+    const screenEl = document.getElementById('screen');
+    const overlayEl = document.getElementById('overlay');
+
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsPath = window.location.pathname.replace(/\/vnc-frame$/, '/vnc-ws');
+    const wsUrl = `${proto}//${window.location.host}${wsPath}?id=${encodeURIComponent(sessionId)}&token=${encodeURIComponent(token)}`;
+
+    let rfb = null;
+    let reconnectAttempts = 0;
+
+    function connect() {
+      overlayEl.textContent = reconnectAttempts > 0
+        ? `Reconnecting to live browser (attempt ${reconnectAttempts})…`
+        : 'Connecting to live browser…';
+      overlayEl.classList.remove('hidden');
+
+      try {
+        rfb = new RFB(screenEl, wsUrl);
+        rfb.scaleViewport = true;
+        rfb.resizeSession = false;
+        rfb.clipViewport = false;
+        rfb.background = '#111827';
+
+        rfb.addEventListener('connect', () => {
+          reconnectAttempts = 0;
+          overlayEl.classList.add('hidden');
+        });
+
+        rfb.addEventListener('disconnect', (e) => {
+          const clean = e.detail && e.detail.clean;
+          if (clean || reconnectAttempts >= 5) {
+            overlayEl.textContent = 'Browser stream disconnected.';
+            overlayEl.classList.remove('hidden');
+            return;
+          }
+          reconnectAttempts += 1;
+          setTimeout(connect, 1500);
+        });
+      } catch (err) {
+        overlayEl.textContent = `Connection error: ${err.message}`;
+        overlayEl.classList.remove('hidden');
+      }
+    }
+
+    connect();
+  </script>
+</body>
+</html>

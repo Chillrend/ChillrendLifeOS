@@ -1,15 +1,19 @@
 require('dotenv').config();
 const fs = require('node:fs');
+const http = require('node:http');
 const path = require('node:path');
 const { Client, Collection, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 const express = require('express');
 const crypto = require('crypto');
 const actualService = require('./services/actualService');
 const db = require('./db/database');
+const timesheetRoutes = require('./routes/timesheet');
 
 // --- Configuration ---
 const PORT = process.env.PORT || 3000;
 const app = express();
+app.set('trust proxy', 1);
+const server = http.createServer(app);
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -168,8 +172,12 @@ client.on('error', (error) => {
 
 // --- Register Express Routes ---
 app.use('/', require('./routes/finance')(client));
+app.use('/', timesheetRoutes.router);
 
-app.listen(PORT, () => {
+// Attach authenticated WebSocket proxy for live noVNC timesheet sessions
+timesheetRoutes.attachWebSocketProxy(server);
+
+server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
 

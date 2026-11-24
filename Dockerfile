@@ -26,6 +26,11 @@ RUN apt-get update && apt-get install -y \
     libcairo2 \
     libpango-1.0-0 \
     libpangocairo-1.0-0 \
+    xvfb \
+    x11vnc \
+    novnc \
+    fluxbox \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /usr/src/app

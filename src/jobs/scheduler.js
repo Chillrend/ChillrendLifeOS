@@ -1,7 +1,8 @@
 const cron = require('node-cron');
 const { generateDailyLog, generateWeeklyWrapup } = require('../services/taskSummarizer');
 const timesheetService = require('../services/timesheetService');
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { buildDailyLogEmbeds } = require('../utils/dailyLogEmbed');
 
 module.exports = (client) => {
   const timezone = process.env.APP_TIMEZONE || 'Asia/Jakarta';
@@ -34,33 +35,41 @@ module.exports = (client) => {
         return;
       }
 
-      const embed = new EmbedBuilder()
-        .setTitle(`📅 Automated Daily Work Log - ${result.displayDate}`)
-        .setDescription('Here is your automated end-of-day structured timesheet log:')
-        .setColor(0x00FF00)
-        .setFooter({ text: 'Automated by LifeOS Scheduler' });
-
       const tasks = result.log;
-      let logText = '';
-      for (let i = 0; i < tasks.length; i++) {
-        const t = tasks[i];
-        const cleanDesc = t.description ? t.description.replace(/<[^>]*>/g, '').trim().substring(0, 100) : 'No description';
-        logText += `**${i+1}. ${t.title}** (${t.statusName})\n*${cleanDesc}*\n\n`;
-      }
-      if (logText.length > 1024) logText = logText.substring(0, 1020) + '...';
-      embed.addFields({ name: 'Tasks', value: logText || 'No tasks found.' });
+      const embeds = buildDailyLogEmbeds({
+        title: `📅 Automated Daily Work Log - ${result.displayDate}`,
+        description: 'Here is your automated end-of-day structured timesheet log:',
+        footerText: 'Automated by LifeOS Scheduler',
+        tasks
+      });
 
-      await owner.send({ embeds: [embed] });
+      for (const embed of embeds) {
+        await owner.send({ embeds: [embed] });
+      }
       console.log('[Scheduler] Automated daily log sent to owner successfully.');
 
       // Auto-submit if configured
       if (process.env.TIMESHEET_AUTO_SUBMIT === 'true') {
         const submitMsg = await owner.send('⏳ Automatically submitting logs to the Kemdikbud portal...');
-        const submitResult = await timesheetService.submitDailyLogs(tasks, result.targetDate);
+        const submitResult = await timesheetService.submitDailyLogs(tasks, result.targetDate, {
+          onVerificationRequired: async ({ url, reason, expiresInSeconds }) => {
+            const mins = Math.max(1, Math.round(expiresInSeconds / 60));
+            const row = new ActionRowBuilder().addComponents(
+              new ButtonBuilder()
+                .setLabel('Open Live Browser')
+                .setStyle(ButtonStyle.Link)
+                .setURL(url)
+            );
+            await submitMsg.edit({
+              content: `🛡️ **Verification Required:** ${reason}\nClick the button below to solve Cloudflare / log in (expires in ~${mins} min). Automation will resume automatically once the portal loads.`,
+              components: [row]
+            });
+          }
+        });
         if (submitResult.success) {
-          await submitMsg.edit(`✅ **Success:** ${submitResult.message}`);
+          await submitMsg.edit({ content: `✅ **Success:** ${submitResult.message}`, components: [] });
         } else {
-          await submitMsg.edit(`❌ **Failed:** ${submitResult.message}`);
+          await submitMsg.edit({ content: `❌ **Failed:** ${submitResult.message}`, components: [] });
         }
       }
 

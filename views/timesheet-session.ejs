@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Timesheet Verification - LifeOS</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex flex-col">
+  <!-- Header & Controls -->
+  <header class="bg-gray-800 border-b border-gray-700 px-4 py-3">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <span class="text-xl">🛡️</span>
+        <div>
+          <h1 class="text-base sm:text-lg font-bold text-emerald-400 leading-tight">
+            Timesheet Live Browser (<%= session.targetDate %>)
+          </h1>
+          <p id="status-message" class="text-xs sm:text-sm text-gray-300">
+            <%= session.message %>
+          </p>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <span id="status-badge" class="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+          Waiting • <span id="countdown">--:--</span>
+        </span>
+
+        <% if (hasCredentials) { %>
+        <button id="btn-fill" type="button" onclick="postAction('fill-credentials')"
+          class="px-3 py-1.5 text-xs sm:text-sm font-medium rounded bg-indigo-600 hover:bg-indigo-500 text-white transition disabled:opacity-50">
+          Fill Login
+        </button>
+        <% } %>
+
+        <button id="btn-reload" type="button" onclick="postAction('reload')"
+          class="px-3 py-1.5 text-xs sm:text-sm font-medium rounded bg-gray-700 hover:bg-gray-600 text-gray-100 transition disabled:opacity-50">
+          Reload
+        </button>
+
+        <button id="btn-resume" type="button" onclick="postAction('resume')"
+          class="px-3 py-1.5 text-xs sm:text-sm font-medium rounded bg-emerald-600 hover:bg-emerald-500 text-white transition disabled:opacity-50">
+          Resume Automation
+        </button>
+
+        <button id="btn-cancel" type="button" onclick="postAction('cancel')"
+          class="px-3 py-1.5 text-xs sm:text-sm font-medium rounded bg-red-600/80 hover:bg-red-600 text-white transition disabled:opacity-50">
+          Cancel
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Toast / Action Feedback -->
+  <div id="toast" class="hidden bg-gray-800 border-b border-gray-700 px-4 py-2 text-xs sm:text-sm text-center text-emerald-300"></div>
+
+  <!-- Live Browser Iframe Container -->
+  <main class="flex-1 flex flex-col items-center justify-center p-2 sm:p-4">
+    <div id="iframe-wrapper" class="w-full max-w-[1280px] aspect-[16/10] bg-black rounded-lg overflow-hidden border border-gray-700 shadow-2xl relative">
+      <iframe
+        id="vnc-iframe"
+        src="vnc-frame?id=<%= encodeURIComponent(session.id) %>&token=<%= encodeURIComponent(token) %>"
+        class="w-full h-full border-0"
+        allow="clipboard-read; clipboard-write"
+      ></iframe>
+    </div>
+
+    <div id="done-panel" class="hidden max-w-lg w-full bg-gray-800 border border-gray-700 rounded-lg p-6 text-center shadow-xl">
+      <div id="done-icon" class="text-4xl mb-3">✅</div>
+      <h2 id="done-title" class="text-xl font-bold text-emerald-400 mb-2">Completed</h2>
+      <p id="done-message" class="text-gray-300 text-sm mb-4"></p>
+      <p class="text-xs text-gray-400">You can safely close this tab now.</p>
+    </div>
+
+    <p id="hint-text" class="mt-3 text-xs text-gray-400 text-center max-w-2xl">
+      Click directly inside the browser above to complete the Cloudflare checkbox and log in.
+      Once the portal reaches the calendar page (<strong>Tambah Log</strong>), automation resumes automatically.
+    </p>
+  </main>
+
+  <script>
+    const sessionId = <%- JSON.stringify(session.id) %>;
+    const token = <%- JSON.stringify(token) %>;
+    let expiresAt = <%= session.expiresAt %>;
+    let currentStatus = <%- JSON.stringify(session.status) %>;
+
+    const statusBadge = document.getElementById('status-badge');
+    const statusMessage = document.getElementById('status-message');
+    const countdownEl = document.getElementById('countdown');
+    const toastEl = document.getElementById('toast');
+    const iframeWrapper = document.getElementById('iframe-wrapper');
+    const vncIframe = document.getElementById('vnc-iframe');
+    const donePanel = document.getElementById('done-panel');
+    const doneIcon = document.getElementById('done-icon');
+    const doneTitle = document.getElementById('done-title');
+    const doneMessage = document.getElementById('done-message');
+    const hintText = document.getElementById('hint-text');
+
+    function showToast(msg, isError = false) {
+      toastEl.textContent = msg;
+      toastEl.className = `px-4 py-2 text-xs sm:text-sm text-center border-b border-gray-700 ${
+        isError ? 'bg-red-950/70 text-red-300' : 'bg-gray-800 text-emerald-300'
+      }`;
+      toastEl.classList.remove('hidden');
+      clearTimeout(showToast._timer);
+      showToast._timer = setTimeout(() => toastEl.classList.add('hidden'), 5000);
+    }
+
+    function setControlsEnabled(enabled) {
+      ['btn-fill', 'btn-reload', 'btn-resume', 'btn-cancel'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = !enabled;
+      });
+    }
+
+    function formatCountdown(ms) {
+      const totalSec = Math.max(0, Math.ceil(ms / 1000));
+      const m = Math.floor(totalSec / 60);
+      const s = String(totalSec % 60).padStart(2, '0');
+      return `${m}:${s}`;
+    }
+
+    function renderState(state) {
+      currentStatus = state.status;
+      if (state.expiresAt) expiresAt = state.expiresAt;
+      if (state.message) statusMessage.textContent = state.message;
+
+      if (state.status === 'waiting') {
+        statusBadge.className = 'px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40';
+        statusBadge.innerHTML = `Waiting • <span id="countdown">${formatCountdown(expiresAt - Date.now())}</span>`;
+        setControlsEnabled(true);
+      } else if (state.status === 'submitting') {
+        statusBadge.className = 'px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-500/20 text-sky-300 border border-sky-500/40';
+        statusBadge.textContent = 'Submitting Logs…';
+        setControlsEnabled(false);
+      } else {
+        setControlsEnabled(false);
+        iframeWrapper.classList.add('hidden');
+        hintText.classList.add('hidden');
+        vncIframe.src = 'about:blank';
+        donePanel.classList.remove('hidden');
+
+        if (state.status === 'completed') {
+          statusBadge.className = 'px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
+          statusBadge.textContent = 'Completed';
+          doneIcon.textContent = '✅';
+          doneTitle.textContent = 'Daily Logs Submitted!';
+          doneTitle.className = 'text-xl font-bold text-emerald-400 mb-2';
+        } else if (state.status === 'cancelled') {
+          statusBadge.className = 'px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-600/30 text-gray-300 border border-gray-500/40';
+          statusBadge.textContent = 'Cancelled';
+          doneIcon.textContent = '🛑';
+          doneTitle.textContent = 'Session Cancelled';
+          doneTitle.className = 'text-xl font-bold text-gray-300 mb-2';
+        } else {
+          statusBadge.className = 'px-2.5 py-1 rounded-full text-xs font-semibold bg-red-500/20 text-red-300 border border-red-500/40';
+          statusBadge.textContent = state.status === 'expired' ? 'Expired' : 'Failed';
+          doneIcon.textContent = '❌';
+          doneTitle.textContent = state.status === 'expired' ? 'Session Timed Out' : 'Submission Failed';
+          doneTitle.className = 'text-xl font-bold text-red-400 mb-2';
+        }
+
+        doneMessage.textContent = state.message || '';
+      }
+    }
+
+    async function postAction(action) {
+      try {
+        const res = await fetch(`session/${encodeURIComponent(sessionId)}/${action}?token=${encodeURIComponent(token)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showToast(data.error || 'Action failed.', true);
+        } else {
+          showToast(data.message || 'Done.', data.ok === false);
+        }
+        await pollStatus();
+      } catch (err) {
+        showToast(`Request failed: ${err.message}`, true);
+      }
+    }
+
+    async function pollStatus() {
+      try {
+        const res = await fetch(`session/${encodeURIComponent(sessionId)}/status?token=${encodeURIComponent(token)}`);
+        const data = await res.json();
+        renderState(data);
+        if (!['waiting', 'submitting'].includes(data.status)) {
+          clearInterval(pollTimer);
+          clearInterval(tickTimer);
+        }
+      } catch (_) {}
+    }
+
+    const tickTimer = setInterval(() => {
+      if (currentStatus === 'waiting') {
+        const el = document.getElementById('countdown');
+        if (el) el.textContent = formatCountdown(expiresAt - Date.now());
+      }
+    }, 1000);
+
+    const pollTimer = setInterval(pollStatus, 2000);
+    renderState({ status: currentStatus, expiresAt, message: statusMessage.textContent });
+  </script>
+</body>
+</html>
